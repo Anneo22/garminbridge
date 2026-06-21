@@ -65,6 +65,6 @@ case "${1:-status}" in
   unset) cfg_unset "$2"; echo "unset $2" ;;
   get)   [ -f "$GVE_CONFIG" ] && grep -E "^$2=" "$GVE_CONFIG" | head -1 | cut -d= -f2- | sed "s/^['\"]//; s/['\"]$//" || true ;;
   -h|--help|help)
-    grep '^#' "$0" | sed 's/^# \{0,1\}//' ;;
+    grep '^#' "$0" | grep -v '^#!' | sed 's/^# \{0,1\}//' ;;
   *) echo "usage: garmin-voice {pause|resume|free|sync|status|set KEY VAL|unset KEY}" >&2; exit 2 ;;
 esac
