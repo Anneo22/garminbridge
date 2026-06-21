@@ -25,10 +25,11 @@ DELETE_FLAG="${GARMIN_VOICE_DELETE:-}"   # set to "--delete" to remove notes fro
 mkdir -p "$HOME/Library/LaunchAgents" "$LOGDIR"
 [ -x "$EXPORT" ] || chmod +x "$EXPORT"
 
-# build the watcher if needed
-if [ ! -x "$WATCHER_BIN" ] || [ "$WATCHER_SRC" -nt "$WATCHER_BIN" ]; then
+# build the watcher if needed (skip when a prebuilt binary exists in a read-only
+# location, e.g. a Homebrew cellar; rebuild only when our dir is writable and src is newer)
+if [ ! -x "$WATCHER_BIN" ] || { [ "$WATCHER_SRC" -nt "$WATCHER_BIN" ] && [ -w "$(dirname "$WATCHER_BIN")" ]; }; then
   echo "Building garmin-usb-watcher..."
-  swiftc -O "$WATCHER_SRC" -o "$WATCHER_BIN"
+  swiftc -O "$WATCHER_SRC" -o "$WATCHER_BIN" 2>/dev/null || [ -x "$WATCHER_BIN" ] || { echo "Failed to build watcher (Xcode CLT required)"; exit 1; }
 fi
 
 # stop the old poller if it's still installed

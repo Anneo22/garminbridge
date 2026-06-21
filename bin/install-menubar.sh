@@ -14,10 +14,12 @@ LABEL="com.garminvoice.menubar"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 UID_NUM="$(id -u)"
 
-echo "Building menu-bar app..."
-mkdir -p "$APP/Contents/MacOS"
-swiftc -O "$SRC" -o "$BIN"
-cat > "$APP/Contents/Info.plist" <<PL
+mkdir -p "$APP/Contents/MacOS" 2>/dev/null || true
+if [ ! -x "$BIN" ] || { [ "$SRC" -nt "$BIN" ] && [ -w "$APP/Contents/MacOS" ]; }; then
+  echo "Building menu-bar app..."
+  swiftc -O "$SRC" -o "$BIN" 2>/dev/null || [ -x "$BIN" ] || { echo "Failed to build menu-bar app (Xcode CLT required)"; exit 1; }
+fi
+if [ -w "$APP/Contents" ]; then cat > "$APP/Contents/Info.plist" <<PL
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -29,6 +31,7 @@ cat > "$APP/Contents/Info.plist" <<PL
   <key>LSUIElement</key><true/>
 </dict></plist>
 PL
+fi
 
 mkdir -p "$HOME/Library/LaunchAgents"
 cat > "$PLIST" <<PL

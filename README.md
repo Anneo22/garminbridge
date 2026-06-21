@@ -50,6 +50,8 @@ cd garmin-voice-export
 ./install.sh
 ```
 
+Or with Homebrew: `brew install anneo22/garmin/garmin-voice-export`, then `garmin-voice-setup`.
+
 `install.sh` installs dependencies (`gphoto2`, `terminal-notifier`), asks where to
 save memos and whether to delete them from the watch, and sets up the on-connect
 importer. It can also set up transcription and the menu-bar app.
