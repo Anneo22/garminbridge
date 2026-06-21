@@ -3,81 +3,76 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Garmin Voice Memos for Mac</title>
-<meta name="description" content="Your Garmin watch's voice notes, on your Mac — automatically, the moment you plug in. Reliable where Android File Transfer and OpenMTP fail.">
+<meta name="description" content="Your Garmin watch's voice notes, on your Mac, automatically, the moment you plug in. Reliable where Android File Transfer and OpenMTP fail.">
 <style>
   :root{
-    --ink:#1c1b19; --muted:#74726c; --faint:#9b988f;
-    --paper:#fcfbf7; --line:#e7e3d8; --accent:#3a5d83;
+    --bg:#0e0e10; --ink:#e9e6df; --muted:#9a958b; --faint:#67635b;
+    --line:#26262a; --accent:#c2a878; --panel:#161618;
     --serif:"Iowan Old Style","Charter","Palatino Linotype",Palatino,Georgia,serif;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box}
   html{-webkit-text-size-adjust:100%}
   body{
-    margin:0; background:var(--paper); color:var(--ink);
-    font-family:var(--serif); font-size:20px; line-height:1.7;
-    font-feature-settings:"liga","kern";
-    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--serif); font-size:20px; line-height:1.72;
+    font-feature-settings:"liga","kern"; -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
   }
-  .wrap{max-width:660px; margin:0 auto; padding:7rem 28px 5rem}
-  a{color:var(--accent); text-decoration:none; border-bottom:1px solid rgba(58,93,131,.28)}
+  .wrap{max-width:648px; margin:0 auto; padding:7.5rem 28px 5rem}
+  a{color:var(--accent); text-decoration:none; border-bottom:1px solid rgba(194,168,120,.32)}
   a:hover{border-bottom-color:var(--accent)}
-  .kicker{font-size:14px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); margin:0 0 1.1rem}
-  h1{font-size:46px; line-height:1.08; font-weight:600; letter-spacing:-.01em; margin:0 0 1rem}
-  .lede{font-size:24px; line-height:1.5; color:var(--ink); margin:0 0 2.4rem}
-  .art{margin:1rem 0 3.2rem}
-  h2{font-size:15px; letter-spacing:.13em; text-transform:uppercase; color:var(--muted); font-weight:600; margin:3.4rem 0 1rem}
-  p{margin:0 0 1.25rem}
+  .kicker{font-size:13px; letter-spacing:.22em; text-transform:uppercase; color:var(--faint); margin:0 0 1.4rem}
+  h1{font-size:47px; line-height:1.07; font-weight:600; letter-spacing:-.015em; margin:0 0 1.1rem}
+  .lede{font-size:23px; line-height:1.52; color:#cfccc3; margin:0 0 2.6rem}
+  .art{margin:1.4rem 0 3.4rem}
+  h2{font-size:13px; letter-spacing:.2em; text-transform:uppercase; color:var(--muted); font-weight:600; margin:3.6rem 0 1.05rem}
+  p{margin:0 0 1.3rem}
   .muted{color:var(--muted)}
-  pre{
-    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace; font-size:15px; line-height:1.6;
-    background:#f4f1e8; border:1px solid var(--line); border-radius:10px;
-    padding:18px 20px; overflow:auto; color:#33312c; margin:0 0 1.25rem
-  }
-  ul{margin:0 0 1.25rem; padding-left:1.1rem}
-  li{margin:0 0 .55rem}
-  .why li{list-style:none; padding-left:0; margin-bottom:1.1rem}
+  pre{font-family:var(--mono); font-size:14.5px; line-height:1.65; background:var(--panel);
+      border:1px solid var(--line); border-radius:10px; padding:18px 20px; overflow:auto; color:#d7d3ca; margin:0 0 1.3rem}
+  ul{list-style:none; margin:0 0 1.3rem; padding:0}
+  .why li{margin:0 0 1.15rem; padding-left:1.3rem; position:relative}
+  .why li::before{content:""; position:absolute; left:0; top:.72em; width:7px; height:1px; background:var(--accent)}
   .why b{font-weight:600}
-  hr{border:0; border-top:1px solid var(--line); margin:3.4rem 0}
-  footer{font-size:16px; color:var(--faint)}
-  footer a{color:var(--muted); border-bottom-color:rgba(116,114,108,.3)}
-  @media (max-width:620px){
-    .wrap{padding:4rem 22px 3.5rem} h1{font-size:36px} .lede{font-size:21px} body{font-size:19px}
-  }
+  hr{border:0; border-top:1px solid var(--line); margin:3.6rem 0}
+  footer{font-size:15px; color:var(--faint)}
+  footer a{color:var(--muted); border-bottom-color:rgba(154,149,139,.28)}
+  @media (max-width:620px){ .wrap{padding:4.2rem 22px 3.5rem} h1{font-size:36px} .lede{font-size:20px} body{font-size:18.5px} }
 </style>
 </head>
 <body>
 <main class="wrap">
   <p class="kicker">Garmin → Mac</p>
   <h1>Your voice notes, off your watch.</h1>
-  <p class="lede">Garmin Voice Memos copies the voice notes off your Garmin watch and onto your Mac — named by when you recorded them, the instant you plug in. No app to fight, nothing to click.</p>
+  <p class="lede">Garmin Voice Memos copies the voice notes off your Garmin watch and onto your Mac, named by when you recorded them, the instant you plug in. No app to fight, nothing to click.</p>
 
   <div class="art" aria-hidden="true">
-    <svg width="100%" viewBox="0 0 660 150" fill="none" stroke="#1c1b19" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
-      <path d="M150 38 v-22 h44 v22"/>
-      <path d="M150 112 v22 h44 v-22"/>
-      <rect x="134" y="38" width="76" height="74" rx="20"/>
-      <circle cx="172" cy="75" r="22"/>
-      <path d="M172 63 v12 l8 5"/>
-      <path d="M214 75 C 300 75, 320 75, 392 75" stroke-dasharray="2 7"/>
-      <path d="M386 70 l8 5 -8 5"/>
-      <rect x="436" y="44" width="118" height="74" rx="6"/>
-      <path d="M452 60 h64 M452 72 h64 M452 84 h40"/>
-      <path d="M420 118 h150 l-10 14 h-130 z"/>
+    <svg width="100%" viewBox="0 0 648 132" fill="none" stroke="#e9e6df" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="150" cy="66" r="34"/>
+      <path d="M150 36 v-16 M150 96 v16"/>
+      <circle cx="150" cy="66" r="1.6" fill="#e9e6df" stroke="none"/>
+      <path d="M150 66 l0 -15 M150 66 l11 6"/>
+      <path d="M188 66 H 452"/>
+      <circle cx="320" cy="66" r="3" fill="#c2a878" stroke="#c2a878"/>
+      <rect x="490" y="34" width="116" height="74" rx="5"/>
+      <path d="M507 52 h60 M507 64 h60 M507 76 h38"/>
+      <path d="M476 116 h144 l-9 12 h-126 z"/>
     </svg>
   </div>
 
-  <p>There is no supported way to get voice notes off a Garmin and onto a Mac. The official answer is Android File Transfer — which is clumsy, crashes, and refuses to run while Garmin Express is open. People ask how to do this on the Garmin forums and get shrugs.</p>
-  <p>So this just does it. Plug the watch in; a few seconds later the memo is in a folder on your Mac and a notification tells you. That's the whole experience.</p>
+  <p>There is no supported way to get voice notes off a Garmin and onto a Mac. The official answer is Android File Transfer, which is clumsy, crashes, and refuses to run while Garmin Express is open. People ask how to do this on the Garmin forums and get shrugs.</p>
+  <p>So this just does it. Plug the watch in, and a few seconds later the memo is in a folder on your Mac and a notification tells you. That is the whole experience.</p>
 
   <h2>Why it works when the others don't</h2>
   <ul class="why">
-    <li><b>It never mounts the whole watch.</b> Android File Transfer, Commander One and OpenMTP open the device as a full volume and enumerate everything — and a modern Garmin holds thousands of map tiles. That full scan is exactly what hangs and crashes. This reads <i>one folder, by path</i>, and pulls only what's new.</li>
-    <li><b>It clears the way first.</b> Garmin Express and macOS's own <span class="muted">PTPCamera</span> daemon both grab the watch's single USB channel. This quietly steps them aside, then restores your control.</li>
-    <li><b>It never yanks the cable mid-sentence.</b> It lets the USB session close cleanly instead of force-killing it — the thing that leaves the watch wedged and "not recognised".</li>
+    <li><b>It never mounts the whole watch.</b> Android File Transfer, Commander One and OpenMTP open the device as a full volume and enumerate everything, and a modern Garmin holds thousands of map tiles. That full scan is exactly what hangs and crashes. This reads one folder, by path, and pulls only what is new.</li>
+    <li><b>It clears the way first.</b> Garmin Express and macOS's own PTPCamera daemon both grab the watch's single USB channel. This quietly steps them aside, then gives you back control.</li>
+    <li><b>It never yanks the cable mid-sentence.</b> It lets the USB session close cleanly instead of force-killing it, the thing that leaves the watch wedged and "not recognised".</li>
     <li><b>It heals itself.</b> Transient failures are retried and recovered, not surfaced as a crash.</li>
   </ul>
-  <p class="muted">Targeted, contention-aware, self-healing access — not mount-and-pray. The same engine works for anything on the watch, which is where this is going.</p>
+  <p class="muted">Targeted, contention-aware, self-healing access, not mount-and-pray. The same engine works for anything on the watch, which is where this is going.</p>
 
   <h2>Get it</h2>
   <pre>git clone https://github.com/Anneo22/garmin-voice-export.git
@@ -86,7 +81,7 @@ cd garmin-voice-export
   <p class="muted">macOS, Homebrew, a USB cable. The installer handles the rest and adds a menu-bar control. Full instructions on <a href="https://github.com/Anneo22/garmin-voice-export">GitHub</a>.</p>
 
   <h2>Where it's going</h2>
-  <p>Voice notes are the first thing it rescues. The same reliable connection can back up your activities, and anything else Garmin strands on the watch — the Mac companion Garmin never built.</p>
+  <p>Voice notes are the first thing it rescues. The same reliable connection can back up your activities, and anything else Garmin strands on the watch: the Mac companion Garmin never built.</p>
 
   <hr>
   <footer>Free and open source, MIT licensed. Built by <a href="https://github.com/Anneo22">Anneo22</a>. <a href="https://github.com/Anneo22/garmin-voice-export">Source on GitHub →</a></footer>
