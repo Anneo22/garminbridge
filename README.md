@@ -13,8 +13,9 @@ that is famously flaky on a Mac. This tool makes it reliable and hands-off.
 - **Named by recording time** — e.g. `2026-06-17_12-25-40.wav`, sortable, no collisions.
 - **Reliable transfer** — a `gphoto2`/MTP backend that reads only the VoiceNotes folder (the usual `libmtp` full-device scan hangs), and automatically handles Garmin Express and the macOS `PTPCamera` daemon fighting for the USB port.
 - **Notifications** — a click-to-open alert when new memos arrive.
-- **Keep or delete** — leave notes on the watch (default) or remove them after a verified local copy (`--delete`).
-- **Optional transcription** — local (Parakeet / Whisper via Apple MLX) or bring-your-own cloud key (OpenAI, Gemini, Groq, Deepgram). Off by default.
+- **Keep or delete, your call** — leave notes on the watch (default), remove them after a verified copy, or only once they're transcribed. Optional local retention can drop the heavy `.wav` after N days while keeping the transcript.
+- **Optional transcription** — local (Parakeet / Whisper via Apple MLX) or bring-your-own cloud key (OpenAI, Gemini, Groq, Deepgram). Off by default. An optional LLM pass tidies punctuation and removes filler ("um", "uh").
+- **Activity backup** — optionally copy your `.fit` activity files to the Mac on the same connect (copy-only, never deletes; they also sync to Garmin Connect). Your raw training data, readable by any FIT tool.
 - **Optional Obsidian output** — write each memo as a note in your vault.
 - **Self-diagnosing** — a diagnostic that tells you whether a failure is the cable or the software.
 
@@ -73,9 +74,10 @@ and **Pause** (free the watch for other apps). No Terminal needed for daily use.
 Run a one-off import manually (no agent needed):
 
 ```sh
-bin/export-voice-notes.sh            # import; leave notes on the watch
-bin/export-voice-notes.sh --delete   # import, then remove from the watch
-bin/export-voice-notes.sh --keep     # explicit: never delete (default)
+bin/export-voice-notes.sh                          # import; leave notes on the watch
+bin/export-voice-notes.sh --delete                 # import, then remove from the watch
+bin/export-voice-notes.sh --delete-after-transcript # remove from the watch only once transcribed
+bin/export-voice-notes.sh --keep                   # explicit: never delete (default)
 ```
 
 Diagnose a connection that isn't working:
@@ -92,13 +94,19 @@ see `config.example`). Sensible defaults mean you usually need none.
 | Variable | Default | Purpose |
 |---|---|---|
 | `GARMIN_VOICE_DEST` | `~/Documents/Voice Memos` | Where memos are saved |
-| `GARMIN_VOICE_DELETE` | unset | Set to `--delete` to remove from the watch (agent) |
+| `GARMIN_VOICE_DELETE` | `keep` | Delete from the watch: `keep` \| `now` (after a verified copy) \| `transcribed` (after a transcript too) |
+| `GVE_AUDIO_RETENTION_DAYS` | unset | Drop the local `.wav` this many days after recording, keeping the `.txt` (`0` = as soon as transcribed). Never deletes un-transcribed audio while transcription is on |
 | `GARMIN_VOICE_SUBPATH` | `GARMIN/Audio/VoiceNotes` | On-watch folder (override if a model differs) |
 | `GARMIN_VOICE_REGEX` | `VoiceNotes[0-9]+\.wav` | Which files count as voice notes (`[0-9]+` matches any number — 6, 12, 100) |
 | `GVE_NAME_FORMAT` | `%Y-%m-%d_%H-%M-%S` | Filename format — a `date` format string (see Naming) |
 | `GVE_TRANSCRIBE` | `0` | `1` to transcribe each new memo |
 | `GVE_TRANSCRIBE_BACKEND` | `parakeet` | `parakeet` \| `whisper` \| `openai` \| `gemini` \| `groq` \| `deepgram` |
+| `GVE_TRANSCRIPT_CLEANUP` | `0` | `1` to clean each transcript with an LLM (punctuation, remove filler) |
+| `GVE_CLEANUP_BACKEND` | `openai` | Cleanup provider: `openai` \| `groq` \| `anthropic` \| `gemini` |
 | `GVE_OBSIDIAN_VAULT` | unset | Path to a vault folder to also write each memo as a note |
+| `GARMIN_ACTIVITY_BACKUP` | `0` | `1` to also copy activity `.fit` files on connect (copy-only) |
+| `GARMIN_ACTIVITY_DEST` | `~/Documents/Garmin Activities` | Where activity files are saved |
+| `GARMIN_ACTIVITY_MAX` | `0` | Max activity files to fetch per run (`0` = all) |
 
 > Writing to `~/Documents` requires Full Disk Access for the agent's interpreter
 > (`/bin/bash`) under macOS privacy rules. Point `GARMIN_VOICE_DEST` at a home-root
@@ -121,6 +129,14 @@ bin/install-transcription.sh         # interactive: pick local (MLX) or a cloud 
 Each memo gets a `.txt` next to its `.wav`. With `GVE_OBSIDIAN_VAULT` set, it also
 becomes a note (transcript + recording date + linked audio).
 
+### Transcript cleanup (optional)
+
+Raw speech-to-text keeps every "um" and has rough punctuation. Turn on `GVE_TRANSCRIPT_CLEANUP=1`
+(with `GVE_CLEANUP_BACKEND` = `openai` \| `groq` \| `anthropic` \| `gemini` and the matching key)
+to run each transcript through an LLM that fixes punctuation, paragraphs, and filler — and is
+told not to change meaning, summarise, or translate. The audio stays the source of truth; if a
+cleanup call fails the raw transcript is kept. Set `GVE_TRANSCRIPT_KEEP_RAW=1` to keep both.
+
 ## Naming
 
 Files are named from each note's recording time via `GVE_NAME_FORMAT`, a `date`
@@ -135,13 +151,23 @@ format string. Examples:
 
 ## Deleting from the watch
 
-Deletion is opt-in (`--delete`). One caveat to understand: removing a `.wav` over USB
-frees the audio immediately, but the watch's voice-note **library index** isn't
-accessible over USB, so the watch keeps showing a now-empty entry (it won't play)
-**until the watch rebuilds its library, which it does on reboot.** In practice:
-delete via this tool, and the entries disappear after the next watch restart. The
-fully clean alternative is to delete notes from the watch's own UI. When `--delete`
-is used, a note is removed from the watch only after a verified local copy exists.
+Deletion is opt-in. There are two independent things you can clean up: the **watch**
+and your **Mac**.
+
+**On the watch** (`GARMIN_VOICE_DELETE`): `keep` (default), `now` (remove after a
+verified local copy), or `transcribed` (remove only once a transcript also exists — a
+safety gate so the source audio leaves the watch only when you have both a copy and the
+text). A note is always removed from the watch only after a verified local copy exists.
+
+**On your Mac** (`GVE_AUDIO_RETENTION_DAYS`): voice memos pile up and the audio is the
+heavy part. Set this to drop the local `.wav` N days after it was recorded while keeping
+the `.txt` transcript (`0` = as soon as it's transcribed). While transcription is on it
+never deletes audio that hasn't been transcribed yet, so you don't lose anything silently.
+
+One caveat about the watch: removing a `.wav` over USB frees the audio immediately, but
+the watch's voice-note **library index** isn't accessible over USB, so the watch keeps
+showing a now-empty entry (it won't play) **until it rebuilds its library on reboot.**
+The fully clean alternative is to delete notes from the watch's own UI.
 
 ## Pausing / freeing the watch for other apps
 
@@ -159,6 +185,25 @@ bin/garmin-voice sync      # run an import now (accepts --delete etc.)
 `free` is handy for Garmin's notoriously finicky USB connection: it kills every
 process holding the device (this tool, leftover `gphoto2`, the macOS `PTPCamera`
 daemon) so the next app you open connects cleanly.
+
+## Activity backup
+
+Turn on `GARMIN_ACTIVITY_BACKUP=1` (in `install.sh`, the menu bar, or the config) to also
+copy your activity `.fit` files to the Mac whenever you plug in. It runs right after the
+voice import on the same connect, sharing one USB session so the two never collide.
+
+It is **copy-only and never deletes** anything: your activities still sync to Garmin Connect
+and the watch manages its own storage. This is just a local archive of the raw `.fit` files,
+readable by any FIT tool, for your own analysis or another platform.
+
+```sh
+bin/garmin-voice activities          # back up new activities now
+```
+
+Files keep their original timestamped names (e.g. `2026-06-17-07-23-16.fit`), are deduped by
+recording time + size, and a big first backup is resumable — it picks up where it left off if
+the connection drops. Bound it per run with `GARMIN_ACTIVITY_MAX=N`. Default destination:
+`~/Documents/Garmin Activities`.
 
 ## How it works
 

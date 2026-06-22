@@ -24,15 +24,16 @@ ensure_venv(){
   [ -d "$VENV" ] || python3 -m venv "$VENV"
   "$VENV/bin/pip" install -q --upgrade pip >/dev/null 2>&1 || true
 }
+# upsert one KEY=VALUE WITHOUT clobbering other settings — the config is shared with the
+# importer (dest / delete policy / retention). Single-quoted so values with spaces survive.
+cfg_put(){ mkdir -p "$(dirname "$CONFIG")"; touch "$CONFIG"
+  grep -vE "^$1=" "$CONFIG" > "$CONFIG.tmp" 2>/dev/null || true; mv "$CONFIG.tmp" "$CONFIG"
+  printf "%s='%s'\n" "$1" "$2" >> "$CONFIG"; chmod 600 "$CONFIG"; }
 write_config(){  # backend [keyvar keyval]
-  { echo "# garmin-voice-export transcription config (auto-written; chmod 600)"
-    echo "GVE_TRANSCRIBE=1"
-    echo "GVE_TRANSCRIBE_BACKEND=$1"
-    [ -n "${2:-}" ] && echo "$2=$3"
-    [ -n "${GVE_OBSIDIAN_VAULT:-}" ] && echo "GVE_OBSIDIAN_VAULT=\"$GVE_OBSIDIAN_VAULT\""
-  } > "$CONFIG"
-  chmod 600 "$CONFIG"
-  echo "Wrote $CONFIG"
+  cfg_put GVE_TRANSCRIBE 1
+  cfg_put GVE_TRANSCRIBE_BACKEND "$1"
+  [ -n "${2:-}" ] && cfg_put "$2" "$3"
+  echo "Updated $CONFIG"
 }
 ask_key(){ local v; printf "Paste your %s API key: " "$1"; read -rs v; echo; echo "$v"; }
 
@@ -50,7 +51,34 @@ esac
 
 printf "Also write each memo into an Obsidian vault? Enter vault path (or leave blank): "
 read -r vault
-if [ -n "$vault" ]; then printf 'GVE_OBSIDIAN_VAULT="%s"\n' "${vault/#\~/$HOME}" >> "$CONFIG"; fi
+if [ -n "$vault" ]; then cfg_put GVE_OBSIDIAN_VAULT "${vault/#\~/$HOME}"; fi
+
+# --- optional: LLM cleanup of the raw transcript (punctuation, drop "um"/"uh", fix slips) ---
+echo
+printf "Clean up transcripts with an LLM (fix punctuation, remove filler), using your API key? (y/N): "
+read -r dc
+if [[ "$dc" =~ ^[Yy] ]]; then
+  echo "Cleanup provider:"
+  echo "  1) OpenAI    — gpt-4o-mini"
+  echo "  2) Groq      — llama-3.3-70b (fast, cheap)"
+  echo "  3) Anthropic — claude-3-5-haiku"
+  echo "  4) Gemini    — gemini-2.5-flash"
+  printf "Choice [1]: "; read -r cc; cc="${cc:-1}"
+  case "$cc" in
+    2) cb=groq;      cv=GVE_GROQ_KEY ;;
+    3) cb=anthropic; cv=GVE_ANTHROPIC_KEY ;;
+    4) cb=gemini;    cv=GVE_GEMINI_KEY ;;
+    *) cb=openai;    cv=GVE_OPENAI_KEY ;;
+  esac
+  if grep -qE "^$cv=" "$CONFIG" 2>/dev/null; then
+    echo "Reusing the $cb API key already in your config."
+  else
+    k="$(ask_key "$cb")"; cfg_put "$cv" "$k"
+  fi
+  cfg_put GVE_TRANSCRIPT_CLEANUP 1
+  cfg_put GVE_CLEANUP_BACKEND "$cb"
+  echo "Transcript cleanup ON via $cb."
+fi
 
 echo
 echo "Done. Transcription is ON. Test it on an existing memo:"

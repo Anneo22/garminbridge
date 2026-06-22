@@ -9,9 +9,22 @@
 # GVE_NAME_FORMAT="%Y-%m-%d_%H-%M-%S"          # default -> 2026-06-17_12-25-40.wav
 # GVE_NAME_FORMAT="%Y/%m/%Y-%m-%d_%H-%M-%S"    # organise into year/month subfolders
 
-# --- delete notes from the watch after a verified copy (leaves a ghost entry on
-#     the watch until it reboots; see README) ---
-# GARMIN_VOICE_DELETE=--delete
+# --- delete notes FROM THE WATCH (leaves a ghost entry on the watch until it
+#     reboots; see README). keep | now | transcribed ---
+# GARMIN_VOICE_DELETE=keep            # keep on watch (default)
+# GARMIN_VOICE_DELETE=now             # remove after a verified local copy
+# GARMIN_VOICE_DELETE=transcribed     # remove only once a transcript also exists
+
+# --- local-disk retention: drop the heavy .wav N days after recording but KEEP the
+#     .txt transcript. 0 = drop as soon as it is transcribed. Unset = keep audio
+#     forever. While transcription is on, never deletes audio that has no transcript. ---
+# GVE_AUDIO_RETENTION_DAYS=30
+
+# --- activity backup: copy activity .fit files to the Mac on connect (copy-only,
+#     never deletes; they also sync to Garmin Connect) ---
+# GARMIN_ACTIVITY_BACKUP=1
+# GARMIN_ACTIVITY_DEST="$HOME/Documents/Garmin Activities"
+# GARMIN_ACTIVITY_MAX=0                # max files per run (0 = all; bound a huge first backup)
 
 # --- transcription ---
 # GVE_TRANSCRIBE=1
@@ -26,6 +39,14 @@
 # GVE_GEMINI_KEY=...
 # GVE_GROQ_KEY=...
 # GVE_DEEPGRAM_KEY=...
+# GVE_ANTHROPIC_KEY=sk-ant-...        # used by transcript cleanup (below)
+
+# --- transcript cleanup (optional): run each transcript through an LLM to fix
+#     punctuation and remove filler ("um"/"uh"). Reuses the keys above. ---
+# GVE_TRANSCRIPT_CLEANUP=1
+# GVE_CLEANUP_BACKEND=openai          # openai | groq | anthropic | gemini
+# GVE_CLEANUP_MODEL=gpt-4o-mini       # optional model override
+# GVE_TRANSCRIPT_KEEP_RAW=1           # also keep the untouched transcript as <name>.raw.txt
 
 # --- Obsidian (optional): also write each memo as a note in this vault folder ---
 # GVE_OBSIDIAN_VAULT="$HOME/Obsidian/Inbox"

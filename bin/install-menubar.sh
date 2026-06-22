@@ -47,7 +47,12 @@ cat > "$PLIST" <<PL
 </dict></plist>
 PL
 
+# bootout is async — wait for it to drain, then bootstrap (retrying past the transient
+# "Input/output error" that happens when the old job hasn't fully unloaded yet).
 launchctl bootout "gui/$UID_NUM/$LABEL" 2>/dev/null || true
-launchctl bootstrap "gui/$UID_NUM" "$PLIST"
+for _ in 1 2 3 4 5; do launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1 || break; sleep 1; done
+ok=0; for _ in 1 2 3 4; do launchctl bootstrap "gui/$UID_NUM" "$PLIST" 2>/dev/null && { ok=1; break; }; sleep 1; done
+[ "$ok" = 1 ] || launchctl bootstrap "gui/$UID_NUM" "$PLIST"     # final attempt, surface a real error
+launchctl enable "gui/$UID_NUM/$LABEL" 2>/dev/null || true
 echo "Menu-bar app installed and started (look for the ◎ waveform icon in the menu bar)."
 echo "  Remove with: launchctl bootout gui/$UID_NUM/$LABEL; rm -rf '$APP' '$PLIST'"

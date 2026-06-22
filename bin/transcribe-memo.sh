@@ -12,8 +12,13 @@
 set -uo pipefail
 WAV="${1:-}"
 [ -n "$WAV" ] && [ -f "$WAV" ] || { echo "transcribe: usage: transcribe-memo.sh <audio>" >&2; exit 2; }
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SELF="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SELF/.." && pwd)"
 VENV="$ROOT/.venv/bin"
+# read backend choice + API keys + cleanup settings from the config (so cloud backends
+# and transcript cleanup work both standalone and when the importer calls us).
+GVE_CONFIG="${GVE_CONFIG:-$HOME/.config/garmin-voice-export/config}"
+[ -f "$GVE_CONFIG" ] && . "$GVE_CONFIG"
 BACKEND="${GVE_TRANSCRIBE_BACKEND:-parakeet}"
 DIR="$(dirname "$WAV")"; BASE="$(basename "${WAV%.*}")"; OUT="$DIR/$BASE.txt"
 PARAKEET_MODEL="${GVE_PARAKEET_MODEL:-mlx-community/parakeet-tdt-0.6b-v3}"
@@ -70,4 +75,12 @@ PY
 esac
 
 [ -s "$OUT" ] || { echo "transcribe: no transcript produced" >&2; exit 5; }
+
+# optional LLM cleanup of the raw transcript, in place (no-op unless GVE_TRANSCRIPT_CLEANUP=1).
+# Never fatal: if cleanup fails the raw transcript is kept and we still report success.
+if [ "${GVE_TRANSCRIPT_CLEANUP:-0}" = "1" ]; then
+  GVE_CONFIG="$GVE_CONFIG" "$SELF/clean-transcript.sh" "$OUT" 1>/dev/null \
+    || echo "transcribe: cleanup skipped (kept raw transcript)" >&2
+fi
+
 echo "$OUT"

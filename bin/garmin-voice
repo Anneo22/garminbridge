@@ -7,18 +7,21 @@
 #   garmin-voice free       release the watch from this tool + macOS PTPCamera RIGHT NOW
 #                          (one-shot; doesn't change pause state). Use when "the Mac
 #                          won't see the watch" — run this, then open your app.
-#   garmin-voice sync [...] run an import now (passes flags like --delete to the importer).
+#   garmin-voice sync [...] run a voice-note import now (passes flags like --delete).
+#   garmin-voice activities [...] back up activity .fit files now (copy-only).
 #   garmin-voice status    show current state.
 
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 EXPORT="$SELF_DIR/export-voice-notes.sh"
+ACTIVITIES="$SELF_DIR/backup-activities.sh"
 LABEL="com.garminvoice.watcher"
 UID_NUM="$(id -u)"
 PAUSE_FLAG="${GVE_PAUSE_FLAG:-$HOME/.config/garmin-voice-export/paused}"
 GVE_CONFIG="${GVE_CONFIG:-$HOME/.config/garmin-voice-export/config}"
+[ -f "$GVE_CONFIG" ] && . "$GVE_CONFIG"            # source first so config can set the destination
 DEST="${GARMIN_VOICE_DEST:-$HOME/Documents/Voice Memos}"
-[ -f "$GVE_CONFIG" ] && . "$GVE_CONFIG"
+ACT_DEST="${GARMIN_ACTIVITY_DEST:-$HOME/Documents/Garmin Activities}"
 mkdir -p "$(dirname "$PAUSE_FLAG")"
 
 # release every process that holds the watch's single USB interface
@@ -52,19 +55,27 @@ case "${1:-status}" in
     echo "   (One-shot. To keep it free across reconnects use:  garmin-voice pause)" ;;
   sync|now)
     shift; free_device; sleep 1; exec "$EXPORT" "$@" ;;
+  activities|backup)
+    shift; free_device; sleep 1; exec "$ACTIVITIES" "$@" ;;
   status)
     echo "Garmin Voice Memos — status"
     echo "  auto-import : $([ -f "$PAUSE_FLAG" ] && echo 'PAUSED' || echo 'active')"
     if launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1; then echo "  watcher     : installed (instant on-connect)"; else echo "  watcher     : not installed (run bin/install-autorun.sh)"; fi
     echo "  destination : $DEST"
-    plist="$HOME/Library/LaunchAgents/$LABEL.plist"
-    if [ -n "${GARMIN_VOICE_DELETE:-}" ] || grep -q -- '--delete' "$plist" 2>/dev/null; then del="on"; else del="off (export only)"; fi
-    echo "  delete-from-watch: $del"
-    echo "  transcription    : $([ "${GVE_TRANSCRIBE:-0}" = 1 ] && echo "on (${GVE_TRANSCRIBE_BACKEND:-parakeet})" || echo 'off')" ;;
+    case "${GARMIN_VOICE_DELETE:-}" in
+      ""|0|keep|no|off)             dm="keep on watch" ;;
+      transcribed|after-transcript) dm="after transcript" ;;
+      *)                            dm="after verified copy" ;;
+    esac
+    echo "  delete-from-watch : $dm"
+    echo "  local retention   : $([ -n "${GVE_AUDIO_RETENTION_DAYS:-}" ] && echo "drop audio after ${GVE_AUDIO_RETENTION_DAYS}d, keep transcript" || echo 'keep audio')"
+    echo "  transcription     : $([ "${GVE_TRANSCRIBE:-0}" = 1 ] && echo "on (${GVE_TRANSCRIBE_BACKEND:-parakeet})" || echo 'off')"
+    echo "  transcript cleanup: $([ "${GVE_TRANSCRIPT_CLEANUP:-0}" = 1 ] && echo "on (${GVE_CLEANUP_BACKEND:-openai})" || echo 'off')"
+    echo "  activity backup   : $([ "${GARMIN_ACTIVITY_BACKUP:-0}" = 1 ] && echo "on -> $ACT_DEST" || echo 'off')" ;;
   set)   cfg_set "$2" "$3"; echo "set $2" ;;
   unset) cfg_unset "$2"; echo "unset $2" ;;
   get)   [ -f "$GVE_CONFIG" ] && grep -E "^$2=" "$GVE_CONFIG" | head -1 | cut -d= -f2- | sed "s/^['\"]//; s/['\"]$//" || true ;;
   -h|--help|help)
     grep '^#' "$0" | grep -v '^#!' | sed 's/^# \{0,1\}//' ;;
-  *) echo "usage: garmin-voice {pause|resume|free|sync|status|set KEY VAL|unset KEY}" >&2; exit 2 ;;
+  *) echo "usage: garmin-voice {pause|resume|free|sync|activities|status|set KEY VAL|unset KEY}" >&2; exit 2 ;;
 esac

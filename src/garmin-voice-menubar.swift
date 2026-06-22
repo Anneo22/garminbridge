@@ -40,8 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ m: NSMenu) {
         let s = ctl(["status"])
         let paused  = statusField(s, "auto-import").contains("PAUSED")
-        let deleting = statusField(s, "delete-from-watch").hasPrefix("on")
+        let dmode   = deleteMode(s)
+        let retDays = retentionDays(s)
         let transOn = statusField(s, "transcription").hasPrefix("on")
+        let cleanOn = statusField(s, "transcript cleanup").hasPrefix("on")
         dest = statusField(s, "destination")
 
         m.removeAllItems()
@@ -51,18 +53,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         m.addItem(action("Sync now", #selector(syncNow)))
         m.addItem(action("Open folder", #selector(openFolder)))
         m.addItem(.separator())
-        m.addItem(check("Delete from watch after import", deleting, #selector(toggleDelete)))
+        m.addItem(submenu("Delete from watch", [
+            check("Keep on watch", dmode == "keep", #selector(setDeleteKeep)),
+            check("After a verified copy", dmode == "now", #selector(setDeleteNow)),
+            check("After it's transcribed", dmode == "transcribed", #selector(setDeleteTranscribed)),
+        ]))
+        m.addItem(submenu("Delete local audio", [
+            check("Keep audio", retDays == "", #selector(setRetKeep)),
+            check("When transcribed", retDays == "0", #selector(setRet0)),
+            check("After 30 days", retDays == "30", #selector(setRet30)),
+            check("After 90 days", retDays == "90", #selector(setRet90)),
+        ]))
         m.addItem(action("Change destination…", #selector(changeDest)))
+        m.addItem(.separator())
         m.addItem(check("Transcribe memos", transOn, #selector(setupTranscription)))
+        m.addItem(check("Clean up transcripts (LLM)", cleanOn, #selector(toggleCleanup)))
         m.addItem(.separator())
         m.addItem(action(paused ? "Resume auto-import" : "Pause (free watch for other apps)",
                          paused ? #selector(resume) : #selector(pause)))
         m.addItem(action("Quit", #selector(quit)))
     }
 
+    // map status text back to canonical values
+    func deleteMode(_ s: String) -> String {
+        let v = statusField(s, "delete-from-watch")
+        if v.contains("transcript") { return "transcribed" }
+        if v.contains("copy")       { return "now" }
+        return "keep"
+    }
+    func retentionDays(_ s: String) -> String {     // "" (keep) or "0"/"30"/"90"
+        let v = statusField(s, "local retention")
+        if v.hasPrefix("keep") { return "" }
+        if let r = v.range(of: "after "), let d = v[r.upperBound...].split(separator: "d").first { return String(d) }
+        return ""
+    }
+
     func disabled(_ t: String) -> NSMenuItem { let i = NSMenuItem(title: t, action: nil, keyEquivalent: ""); i.isEnabled = false; return i }
     func action(_ t: String, _ sel: Selector) -> NSMenuItem { let i = NSMenuItem(title: t, action: sel, keyEquivalent: ""); i.target = self; return i }
     func check(_ t: String, _ on: Bool, _ sel: Selector) -> NSMenuItem { let i = action(t, sel); i.state = on ? .on : .off; return i }
+    func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+        let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        let sm = NSMenu(); items.forEach { sm.addItem($0) }; parent.submenu = sm; return parent
+    }
 
     @objc func syncNow()  { DispatchQueue.global().async { ctl(["sync"]) } }
     @objc func openFolder(){ if !dest.isEmpty { NSWorkspace.shared.open(URL(fileURLWithPath: dest)) } }
@@ -70,9 +102,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func resume()   { ctl(["resume"]) }
     @objc func quit()     { NSApp.terminate(nil) }
 
-    @objc func toggleDelete() {
-        let on = statusField(ctl(["status"]), "delete-from-watch").hasPrefix("on")
-        if on { ctl(["unset", "GARMIN_VOICE_DELETE"]) } else { ctl(["set", "GARMIN_VOICE_DELETE", "--delete"]) }
+    @objc func setDeleteKeep()        { ctl(["unset", "GARMIN_VOICE_DELETE"]) }
+    @objc func setDeleteNow()         { ctl(["set", "GARMIN_VOICE_DELETE", "now"]) }
+    @objc func setDeleteTranscribed() { ctl(["set", "GARMIN_VOICE_DELETE", "transcribed"]) }
+    @objc func setRetKeep() { ctl(["unset", "GVE_AUDIO_RETENTION_DAYS"]) }
+    @objc func setRet0()    { ctl(["set", "GVE_AUDIO_RETENTION_DAYS", "0"]) }
+    @objc func setRet30()   { ctl(["set", "GVE_AUDIO_RETENTION_DAYS", "30"]) }
+    @objc func setRet90()   { ctl(["set", "GVE_AUDIO_RETENTION_DAYS", "90"]) }
+
+    @objc func toggleCleanup() {
+        // not configured yet (no provider/key) -> open the installer where cleanup is set up
+        let backend = ctl(["get", "GVE_CLEANUP_BACKEND"]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if backend.isEmpty { setupTranscription(); return }
+        let on = statusField(ctl(["status"]), "transcript cleanup").hasPrefix("on")
+        ctl(["set", "GVE_TRANSCRIPT_CLEANUP", on ? "0" : "1"])
     }
 
     @objc func changeDest() {
