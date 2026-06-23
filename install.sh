@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh — one-command setup for Garmin Voice Memos.
+# install.sh — one-command setup for GarminBridge.
 # Installs dependencies, asks a few questions, and sets up the on-connect importer.
 # Re-run anytime to change options. Everything it does is reversible.
 
@@ -7,8 +7,8 @@ set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BIN="$HERE/bin"
 
-echo "Garmin Voice Memos — setup"
-echo "=========================="
+echo "GarminBridge setup"
+echo "=================="
 
 # --- dependencies ---
 if ! command -v brew >/dev/null; then
@@ -72,6 +72,6 @@ if yesno "Install the menu-bar app?" Y; then
 fi
 
 echo
-echo "All set. Plug in your Garmin watch — new memos will import automatically to:"
+echo "All set. Plug in your Garmin watch and new memos import automatically to:"
 echo "  $DEST"
 echo "Controls: $BIN/garmin-voice {status|pause|resume|free|sync}"

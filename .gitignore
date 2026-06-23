@@ -15,4 +15,4 @@ config
 CHANGES.log
 
 # menu-bar app bundle (built by install-menubar.sh)
-GarminVoiceMemos.app/
+GarminBridge.app/

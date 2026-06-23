@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# garminbridge — the GarminBridge control CLI. The underlying script is bin/garmin-voice
+# (kept for install compatibility); this is the brand-matching entry point. Same commands:
+#   garminbridge status | sync | activities | pause | resume | free
+exec "$(cd "$(dirname "$0")" && pwd)/garmin-voice" "$@"

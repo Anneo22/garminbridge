@@ -32,7 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var dest = ""
 
     func applicationDidFinishLaunching(_ n: Notification) {
-        item.button?.image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "Garmin Voice Memos")
+        item.button?.image = NSImage(systemSymbolName: "waveform.circle", accessibilityDescription: "GarminBridge")
         menu.delegate = self
         item.menu = menu
     }
@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dest = statusField(s, "destination")
 
         m.removeAllItems()
-        m.addItem(disabled("Garmin Voice Memos"))
+        m.addItem(disabled("GarminBridge"))
         m.addItem(disabled("  " + (paused ? "Paused" : "Active") + (dest.isEmpty ? "" : " · " + (dest as NSString).lastPathComponent)))
         m.addItem(.separator())
         m.addItem(action("Sync now", #selector(syncNow)))

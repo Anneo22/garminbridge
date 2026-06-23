@@ -1,40 +1,41 @@
-# Garmin Voice Memos for macOS
+# GarminBridge
 
-Automatically copy the **voice notes** off your Garmin watch to your Mac — named by
-when they were recorded — the moment you plug the watch in. Optionally transcribe
-them locally or with your own cloud API key.
+A reliable bridge between your Garmin watch and your Mac. Plug in and it pulls your data
+across automatically. **Voice notes** are the headline: copied the moment you connect,
+named by when you recorded them, optionally transcribed. It also backs up your activity
+`.fit` files, and the same engine is built to reach whatever else Garmin strands on the watch.
 
-Garmin offers no supported way to get voice notes off the watch except USB, and even
-that is famously flaky on a Mac. This tool makes it reliable and hands-off.
+Garmin offers no supported, reliable way to get this onto a Mac. The USB connection is
+famously flaky and the official tools crash. GarminBridge makes it just work, hands-off.
 
 ## Features
 
-- **Instant on-connect** — a small IOKit watcher imports within seconds of plugging in (no polling).
-- **Named by recording time** — e.g. `2026-06-17_12-25-40.wav`, sortable, no collisions.
-- **Reliable transfer** — a `gphoto2`/MTP backend that reads only the VoiceNotes folder (the usual `libmtp` full-device scan hangs), and automatically handles Garmin Express and the macOS `PTPCamera` daemon fighting for the USB port.
-- **Notifications** — a click-to-open alert when new memos arrive.
-- **Keep or delete, your call** — leave notes on the watch (default), remove them after a verified copy, or only once they're transcribed. Optional local retention can drop the heavy `.wav` after N days while keeping the transcript.
-- **Optional transcription** — local (Parakeet / Whisper via Apple MLX) or bring-your-own cloud key (OpenAI, Gemini, Groq, Deepgram). Off by default. An optional LLM pass tidies punctuation and removes filler ("um", "uh").
-- **Activity backup** — optionally copy your `.fit` activity files to the Mac on the same connect (copy-only, never deletes; they also sync to Garmin Connect). Your raw training data, readable by any FIT tool.
-- **Optional Obsidian output** — write each memo as a note in your vault.
-- **Self-diagnosing** — a diagnostic that tells you whether a failure is the cable or the software.
+- **Instant on-connect**: a small IOKit watcher imports within seconds of plugging in (no polling).
+- **Named by recording time**: e.g. `2026-06-17_12-25-40.wav`, sortable, no collisions.
+- **Reliable transfer**: a `gphoto2`/MTP backend that reads only the VoiceNotes folder (the usual `libmtp` full-device scan hangs), and automatically handles Garmin Express and the macOS `PTPCamera` daemon fighting for the USB port.
+- **Notifications**: a click-to-open alert when new memos arrive.
+- **Keep or delete, your call**: leave notes on the watch (default), remove them after a verified copy, or only once they're transcribed. Optional local retention can drop the heavy `.wav` after N days while keeping the transcript.
+- **Optional transcription**: local (Parakeet / Whisper via Apple MLX) or bring-your-own cloud key (OpenAI, Gemini, Groq, Deepgram). Off by default. An optional LLM pass tidies punctuation and removes filler ("um", "uh").
+- **Activity backup**: optionally copy your `.fit` activity files to the Mac on the same connect (copy-only, never deletes; they also sync to Garmin Connect). Your raw training data, readable by any FIT tool.
+- **Optional Obsidian output**: write each memo as a note in your vault.
+- **Self-diagnosing**: a diagnostic that tells you whether a failure is the cable or the software.
 
 ## Why it works when Android File Transfer / OpenMTP don't
 
-Those tools open the watch as a **full MTP volume** and enumerate everything — and a
+Those tools open the watch as a **full MTP volume** and enumerate everything, and a
 modern Garmin holds thousands of map tiles. That full recursive scan is exactly what
 hangs and crashes. This tool never does that:
 
 - **Targeted reads, not a full mount.** It reads *one folder by path* with `gphoto2`
-  and pulls only what changed — a handful of PTP commands, never a device-wide scan.
+  and pulls only what changed, a handful of PTP commands, never a device-wide scan.
 - **Clears contention first.** Garmin Express and the macOS `PTPCamera` daemon both
   grab the watch's single USB interface; the tool quietly steps them aside.
 - **Never hard-kills a live session.** It lets MTP close cleanly, so it doesn't wedge
   the watch into the "not recognised" state.
 - **Self-healing.** Transient failures are retried and recovered, not crashed on.
 
-Targeted, contention-aware, self-healing access — not mount-and-pray. The same engine
-generalizes to activities and anything else on the watch.
+Targeted, contention-aware, self-healing access, not mount-and-pray. The same engine
+already backs up your activities, and reaches for whatever else Garmin strands on the watch.
 
 ## Requirements
 
@@ -46,12 +47,12 @@ generalizes to activities and anything else on the watch.
 ## Install
 
 ```sh
-git clone https://github.com/Anneo22/garmin-voice-export.git
-cd garmin-voice-export
+git clone https://github.com/Anneo22/garminbridge.git
+cd garminbridge
 ./install.sh
 ```
 
-Or with Homebrew: `brew install anneo22/garmin/garmin-voice-export`, then `garmin-voice-setup`.
+Or with Homebrew: `brew install anneo22/garmin/garminbridge`, then `garminbridge-setup`.
 
 `install.sh` installs dependencies (`gphoto2`, `terminal-notifier`), asks where to
 save memos and whether to delete them from the watch, and sets up the on-connect
@@ -88,7 +89,7 @@ bin/garmin-diag.sh                   # reports whether it's the cable or the sof
 
 ## Configuration
 
-Set these as environment variables (e.g. in the install command, or a config file —
+Set these as environment variables (e.g. in the install command, or a config file,
 see `config.example`). Sensible defaults mean you usually need none.
 
 | Variable | Default | Purpose |
@@ -97,8 +98,8 @@ see `config.example`). Sensible defaults mean you usually need none.
 | `GARMIN_VOICE_DELETE` | `keep` | Delete from the watch: `keep` \| `now` (after a verified copy) \| `transcribed` (after a transcript too) |
 | `GVE_AUDIO_RETENTION_DAYS` | unset | Drop the local `.wav` this many days after recording, keeping the `.txt` (`0` = as soon as transcribed). Never deletes un-transcribed audio while transcription is on |
 | `GARMIN_VOICE_SUBPATH` | `GARMIN/Audio/VoiceNotes` | On-watch folder (override if a model differs) |
-| `GARMIN_VOICE_REGEX` | `VoiceNotes[0-9]+\.wav` | Which files count as voice notes (`[0-9]+` matches any number — 6, 12, 100) |
-| `GVE_NAME_FORMAT` | `%Y-%m-%d_%H-%M-%S` | Filename format — a `date` format string (see Naming) |
+| `GARMIN_VOICE_REGEX` | `VoiceNotes[0-9]+\.wav` | Which files count as voice notes (`[0-9]+` matches any number, 6, 12, 100) |
+| `GVE_NAME_FORMAT` | `%Y-%m-%d_%H-%M-%S` | Filename format, a `date` format string (see Naming) |
 | `GVE_TRANSCRIBE` | `0` | `1` to transcribe each new memo |
 | `GVE_TRANSCRIBE_BACKEND` | `parakeet` | `parakeet` \| `whisper` \| `openai` \| `gemini` \| `groq` \| `deepgram` |
 | `GVE_TRANSCRIPT_CLEANUP` | `0` | `1` to clean each transcript with an LLM (punctuation, remove filler) |
@@ -133,7 +134,7 @@ becomes a note (transcript + recording date + linked audio).
 
 Raw speech-to-text keeps every "um" and has rough punctuation. Turn on `GVE_TRANSCRIPT_CLEANUP=1`
 (with `GVE_CLEANUP_BACKEND` = `openai` \| `groq` \| `anthropic` \| `gemini` and the matching key)
-to run each transcript through an LLM that fixes punctuation, paragraphs, and filler — and is
+to run each transcript through an LLM that fixes punctuation, paragraphs, and filler, and is
 told not to change meaning, summarise, or translate. The audio stays the source of truth; if a
 cleanup call fails the raw transcript is kept. Set `GVE_TRANSCRIPT_KEEP_RAW=1` to keep both.
 
@@ -155,7 +156,7 @@ Deletion is opt-in. There are two independent things you can clean up: the **wat
 and your **Mac**.
 
 **On the watch** (`GARMIN_VOICE_DELETE`): `keep` (default), `now` (remove after a
-verified local copy), or `transcribed` (remove only once a transcript also exists — a
+verified local copy), or `transcribed` (remove only once a transcript also exists, a
 safety gate so the source audio leaves the watch only when you have both a copy and the
 text). A note is always removed from the watch only after a verified local copy exists.
 
@@ -201,7 +202,7 @@ bin/garmin-voice activities          # back up new activities now
 ```
 
 Files keep their original timestamped names (e.g. `2026-06-17-07-23-16.fit`), are deduped by
-recording time + size, and a big first backup is resumable — it picks up where it left off if
+recording time + size, and a big first backup is resumable, it picks up where it left off if
 the connection drops. Bound it per run with `GARMIN_ACTIVITY_MAX=N`. Default destination:
 `~/Documents/Garmin Activities`.
 
@@ -225,4 +226,4 @@ the voice-note feature. Reports for other models are welcome via issues.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

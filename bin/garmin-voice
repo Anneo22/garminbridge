@@ -58,7 +58,7 @@ case "${1:-status}" in
   activities|backup)
     shift; free_device; sleep 1; exec "$ACTIVITIES" "$@" ;;
   status)
-    echo "Garmin Voice Memos — status"
+    echo "GarminBridge status"
     echo "  auto-import : $([ -f "$PAUSE_FLAG" ] && echo 'PAUSED' || echo 'active')"
     if launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1; then echo "  watcher     : installed (instant on-connect)"; else echo "  watcher     : not installed (run bin/install-autorun.sh)"; fi
     echo "  destination : $DEST"
