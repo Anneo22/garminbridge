@@ -71,7 +71,7 @@ if [ "$DELETE_MODE" = "transcribed" ] && [ "${GVE_TRANSCRIBE:-0}" != "1" ]; then
   DELETE_MODE="keep"; DELETE=0
   GVE_DELETE_WARN="delete-after-transcript needs transcription ON; keeping notes on the watch for now"
 fi
-SUM_NEW=0 SUM_FAIL=0 SUM_DELFAIL=0 SUM_TOTAL=0
+SUM_NEW=0 SUM_FAIL=0 SUM_DELFAIL=0 SUM_TOTAL=0 SUM_REMAIN=0
 
 # Side effects only when actually running. When sourced load-only (GVE_LOAD_ONLY=1, e.g.
 # by backup-activities.sh) we expose just the functions/globals — no TMP, lock, or trap;
@@ -82,10 +82,20 @@ if [ -z "${GVE_LOAD_ONLY:-}" ]; then
   mkdir -p "$DEST"; touch "$MANIFEST"
   LOCK="/tmp/garmin_voice_export.lock"
   if ! mkdir "$LOCK" 2>/dev/null; then echo "another export is already running; skipping." >&2; exit 0; fi
-  trap 'rm -rf "$TMP" "$LOCK"' EXIT
+  trap 'ptp_suppress_stop; rm -rf "$TMP" "$LOCK"' EXIT
 fi
 log(){ printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG"; }
 kill_gp(){ pkill -9 -x gphoto2 2>/dev/null; }
+# macOS keeps relaunching PTPCamera, which re-grabs the watch's single USB channel in the
+# gaps between our ops and wedges the MTP session — the #1 cause of "only got 2-3 notes,
+# had to disconnect/reconnect". Killing it once per op is not enough; suppress it
+# continuously for the whole run (the kill loop only reaps it in the dangerous idle gaps;
+# while gphoto2 holds the device, PTPCamera can't grab it anyway).
+SUPPRESS_PID=""
+ptp_suppress_start(){ [ -n "${SUPPRESS_PID:-}" ] && return 0
+  ( while :; do killall PTPCamera 2>/dev/null; sleep 1; done ) >/dev/null 2>&1 & SUPPRESS_PID=$!
+  disown "$SUPPRESS_PID" 2>/dev/null || true; }   # no job-control "Terminated" noise on stop
+ptp_suppress_stop(){ [ -n "${SUPPRESS_PID:-}" ] && kill "$SUPPRESS_PID" 2>/dev/null; SUPPRESS_PID=""; }
 # macOS desktop notification. With terminal-notifier (brew) the notification is
 # CLICKABLE and opens $3 (a folder) on click; otherwise falls back to a plain
 # (non-clickable) osascript notification. notify <title> <message> [path-to-open]
@@ -134,6 +144,27 @@ gp_get(){ local num="$1" name="$2" last=-1 cur stable=0 i
   done
   for i in $(seq 1 8); do kill -0 "$p" 2>/dev/null || break; sleep 1; done   # let it close cleanly
   kill -9 "$p" 2>/dev/null; kill_gp; sleep 2; [ -s "$TMP/$name" ]
+}
+
+# download SEVERAL notes (by listing index) in a SINGLE gphoto2 session into $TMP, keeping
+# each device filename (VoiceNotesN.wav). One open/close for the whole batch instead of one
+# per note: Garmin's MTP stack wedges on rapid session churn, so batching the reads is what
+# lets a multi-note backlog drain in a single connection. Deletes stay OUT of this pass.
+gp_get_all(){
+  [ "$#" -gt 0 ] || return 0
+  rm -f "$TMP"/VoiceNotes*.wav 2>/dev/null            # avoid gphoto2's overwrite prompt on a retry
+  local args=() n; for n in "$@"; do args+=(--get-file "$n"); done
+  killall PTPCamera 2>/dev/null
+  ( cd "$TMP" && gphoto2 --folder "$VF" "${args[@]}" >"$TMP/getall.out" 2>&1 ) & local p=$! i prev=0 cur stalls=0
+  for i in $(seq 1 300); do                            # patient: the watch is slow over USB
+    kill -0 "$p" 2>/dev/null || break
+    cur="$(find "$TMP" -name 'VoiceNotes*.wav' -exec stat -f%z {} + 2>/dev/null | awk '{s+=$1} END{print s+0}')"
+    if [ "$cur" = "$prev" ]; then stalls=$((stalls+1)); else stalls=0; fi
+    [ "$stalls" -ge 25 ] && break                      # ~25s with no new bytes -> stuck, stop waiting
+    prev="$cur"; sleep 1
+  done
+  for i in $(seq 1 8); do kill -0 "$p" 2>/dev/null || break; sleep 1; done   # let it close cleanly
+  kill -9 "$p" 2>/dev/null; kill_gp; sleep 2
 }
 
 # recording time -> filename base, using GVE_NAME_FORMAT (a date(1) format string).
@@ -245,22 +276,50 @@ do_sync(){
     *)           log "Detected. Reading $VF (export only; notes stay on watch)" ;;
   esac
 
+  rm -f "$TMP"/VoiceNotes*.wav 2>/dev/null
   gp_capture "$TMP/list.out" "in folder '" 40 --folder "$VF" --list-files
   grep -q "in folder '" "$TMP/list.out" || { log "Detected but VoiceNotes folder unreadable; will retry."; return 1; }
 
   local listing; listing="$(awk -v re="$NOTE_REGEX" '
     /^#[0-9]+/ { num=$1; sub(/#/,"",num); if ($2 ~ re) print num"\t"$2"\t"$4"\t"$NF }' "$TMP/list.out")"
-  local total new=0 kept=0 failed=0 deleted=0 delfail=0
+  local total new=0 kept=0 failed=0 deleted=0 delfail=0 remain=0
   total="$(printf '%s' "$listing" | grep -c .)"
   log "$total voice note(s) on watch."
+  if [ "$total" -eq 0 ]; then
+    SUM_NEW=0 SUM_FAIL=0 SUM_DELFAIL=0 SUM_TOTAL=0 SUM_REMAIN=0
+    log "Done: 0 new, 0 kept, 0 failed | watch: 0 deleted, 0 not-deleted, 0 still on watch -> $DEST"
+    return 0
+  fi
 
+  # Which listed notes do we still need to pull? Skip ones already verified on disk or
+  # intentionally retention-pruned, so we never re-download. Collect their listing indices.
+  local needidx=""
+  while IFS=$'\t' read -r num dev kb epoch; do
+    [ -z "${num:-}" ] && continue
+    local id="${epoch}_${kb}" lf
+    lf="$(manifest_file "$id")"
+    if [ -n "$lf" ]; then
+      valid_wav "$DEST/$lf" "$kb" && continue
+      manifest_pruned "$id" && continue
+    fi
+    needidx="$needidx $num"
+  done <<EOF
+$listing
+EOF
+
+  # PHASE 1 — pull everything we still need in ONE gphoto2 session. No interleaved deletes:
+  # deleting after each get is what wedged Garmin's MTP channel and stranded the backlog.
+  if [ -n "${needidx// /}" ]; then
+    log "  downloading $(printf '%s' "$needidx" | wc -w | tr -d ' ') note(s) in one session..."
+    gp_get_all $needidx
+  fi
+
+  # PHASE 2 — verify + place each note; QUEUE the safe ones for the deferred delete pass.
+  local -a del_dev=() del_kb=() del_saved=()
   while IFS=$'\t' read -r num dev kb epoch; do
     [ -z "${num:-}" ] && continue
     local id="${epoch}_${kb}" base lf saved wavpath have=0 pruned=0
     base="$(ts_name "$epoch")"
-
-    # Already have this note? Either a verified local copy is on disk, or we held one
-    # before and intentionally retention-pruned the .wav. Either way: never re-download.
     lf="$(manifest_file "$id")"
     if [ -n "$lf" ]; then
       saved="$lf"; wavpath="$DEST/$lf"
@@ -269,12 +328,13 @@ do_sync(){
     fi
 
     if [ "$have" -eq 0 ]; then
-      if ! gp_get "$num" "$dev"; then failed=$((failed+1)); log "  ! download failed: $dev (kept on watch)"; continue; fi
-      if ! valid_wav "$TMP/$dev" "$kb"; then failed=$((failed+1)); log "  ! verify failed: $dev (kept on watch)"; rm -f "$TMP/$dev"; continue; fi
+      local src="$TMP/$dev"
+      if [ ! -s "$src" ]; then failed=$((failed+1)); log "  ! download failed: $dev (kept on watch)"; continue; fi
+      if ! valid_wav "$src" "$kb"; then failed=$((failed+1)); log "  ! verify failed: $dev (kept on watch)"; rm -f "$src"; continue; fi
       local final="$DEST/$base.wav"
-      if [ -e "$final" ] && [ "$(stat -f%z "$final" 2>/dev/null)" != "$(stat -f%z "$TMP/$dev")" ]; then final="$DEST/${base}_${kb}KB.wav"; fi
+      if [ -e "$final" ] && [ "$(stat -f%z "$final" 2>/dev/null)" != "$(stat -f%z "$src")" ]; then final="$DEST/${base}_${kb}KB.wav"; fi
       mkdir -p "$(dirname "$final")" 2>/dev/null   # GVE_NAME_FORMAT may include subfolders
-      mv -f "$TMP/$dev" "$final"
+      mv -f "$src" "$final"
       if ! valid_wav "$final" "$kb"; then failed=$((failed+1)); log "  ! post-move verify failed: $(basename "$final") (kept on watch)"; continue; fi
       saved="$(basename "$final")"; wavpath="$final"
       manifest_has "$id" || printf '%s\t%s\n' "$id" "$saved" >> "$MANIFEST"   # guard against dup lines
@@ -291,19 +351,40 @@ do_sync(){
       fi
     fi
 
-    # verified local copy in hand (now or recorded earlier) -> safe to delete from watch
+    # verified local copy in hand (now or earlier) -> queue for deletion AFTER all downloads
     if [ "$DELETE" -eq 1 ] && [ "$have" -eq 1 ]; then
       if [ "$DELETE_MODE" = "transcribed" ] && [ ! -f "$(txt_for "$wavpath")" ]; then
         kept=$((kept+1)); log "  · $dev kept on watch (waiting for a transcript)"
-      elif delete_from_watch "$dev" "$kb"; then deleted=$((deleted+1)); log "  - deleted $dev from watch (saved as $saved)"
-      else delfail=$((delfail+1)); log "  ~ saved but could NOT delete $dev from watch (will retry next time)"; fi
+      else
+        del_dev+=("$dev"); del_kb+=("$kb"); del_saved+=("$saved")
+      fi
     fi
   done <<EOF
 $listing
 EOF
 
-  SUM_NEW=$new SUM_FAIL=$failed SUM_DELFAIL=$delfail SUM_TOTAL=$total
-  log "Done: $new new, $kept kept, $failed failed | watch: $deleted deleted, $delfail not-deleted -> $DEST"
+  # PHASE 3 — deferred deletes: only now, with every download byte-verified, remove from watch.
+  if [ "${#del_dev[@]}" -gt 0 ]; then
+    local di
+    for di in "${!del_dev[@]}"; do
+      if delete_from_watch "${del_dev[$di]}" "${del_kb[$di]}"; then
+        deleted=$((deleted+1)); log "  - deleted ${del_dev[$di]} from watch (saved as ${del_saved[$di]})"
+      else
+        delfail=$((delfail+1)); log "  ~ saved but could NOT delete ${del_dev[$di]} from watch (will retry next time)"
+      fi
+    done
+  fi
+
+  # PHASE 4 — completeness: re-read the watch and report the GROUND TRUTH still on it, so the
+  # "done" claim is checked against the device, not against this run's own bookkeeping.
+  if gp_capture "$TMP/relist.out" "in folder '" 40 --folder "$VF" --list-files && grep -q "in folder '" "$TMP/relist.out"; then
+    remain="$(awk -v re="$NOTE_REGEX" '/^#[0-9]+/ && $2 ~ re {c++} END{print c+0}' "$TMP/relist.out")"
+  else
+    remain=-1   # could not re-verify the watch this pass
+  fi
+
+  SUM_NEW=$new SUM_FAIL=$failed SUM_DELFAIL=$delfail SUM_TOTAL=$total SUM_REMAIN=$remain
+  log "Done: $new new, $kept kept, $failed failed | watch: $deleted deleted, $delfail not-deleted, ${remain} still on watch -> $DEST"
   { [ "$failed" -gt 0 ] || [ "$delfail" -gt 0 ]; } && return 1 || return 0
 }
 
@@ -315,17 +396,34 @@ sync_with_retry(){ local try=1 rc=1
     log "Attempt $try (rc=$rc); retrying..."; killall PTPCamera 2>/dev/null; kill_gp; sleep 6; try=$((try+1))
   done; return "$rc"; }
 
-# post-run desktop notification: success only when something new arrived; error on
-# real failures. Stays silent on the routine "nothing new" so it never spams.
+# post-run desktop notification: a real COMPLETENESS verdict, not just a count. Silent only
+# when the watch was empty and nothing was new (so it never spams routine connects).
 finish_notify(){ local rc="$1"
-  if [ "${SUM_NEW:-0}" -gt 0 ]; then
-    notify "Voice Memos" "Imported $SUM_NEW new memo$([ "$SUM_NEW" -gt 1 ] && echo s) - click to open" "$DEST"
+  local n="${SUM_NEW:-0}" total="${SUM_TOTAL:-0}" remain="${SUM_REMAIN:-0}" delfail="${SUM_DELFAIL:-0}"
+  [ "$rc" -eq 10 ] && return 0                          # not detected (cable/clip): stay quiet
+  { [ "$n" -le 0 ] && [ "$total" -le 0 ]; } && return 0 # nothing on the watch, nothing new: silent
+  local pre="" title msg
+  [ "$n" -gt 0 ] && pre="Imported $n new memo$([ "$n" -gt 1 ] && echo s) - "
+  if [ "$DELETE" -eq 1 ]; then
+    if [ "$remain" = "-1" ]; then
+      title="Voice Memos"; msg="${pre}couldn't re-check the watch - reconnect to confirm it's empty"
+    elif [ "$remain" -eq 0 ] && [ "$delfail" -eq 0 ]; then
+      title="Voice Memos ✓"; msg="${pre}watch is now empty, every note is on your Mac"
+    else
+      title="Voice Memos - not finished"; msg="${pre}$remain still on the watch; keep it connected / reconnect to finish"
+    fi
+  else
+    if [ "$rc" -eq 0 ]; then
+      title="Voice Memos ✓"; msg="${pre}all $total note(s) on the watch are backed up"
+    else
+      title="Voice Memos - issue"; msg="${pre}some notes failed; reconnect to finish"
+    fi
   fi
-  if [ "$rc" -eq 10 ]; then :                         # not detected: cable/clip, common; stay quiet in auto
-  elif [ "$rc" -ne 0 ]; then notify "Voice Memos - issue" "Some memos failed to import; will retry next connection"; fi
+  notify "$title" "$msg" "$DEST"
 }
 
 main(){
+ptp_suppress_start   # hold PTPCamera off the watch for the whole run (detect + sync + delete)
 if [ "$MODE" = "auto" ]; then
   # Triggered by the on-connect watcher (once per attach). Respect the pause switch;
   # no marker bookkeeping needed since it's event-driven, not polled.
