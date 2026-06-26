@@ -3,12 +3,13 @@
 # upgraded watch can be set back up the way you had it. COPY-ONLY: it never deletes anything
 # from the watch.
 #
-# What it backs up (all plain files over MTP, confirmed by on-watch recon):
-#   Sports         GARMIN/Sports          the per-sport profiles / data-screen "faces" (one .fit each)
-#   Device         GARMIN/Settings        device settings (Settings.fit, FocusSettings.bin)
-#   Device Backup  GARMIN/Backup/Backups  the watch's own settings backup blob (settings_backup.bak)
-#   Connect IQ     GARMIN/Apps/SETTINGS   Connect IQ app settings (.SET)
-# With GARMIN_BACKUP_CONTENT=1 it also mirrors your Courses and Workouts.
+# What it backs up (all plain files over MTP, confirmed by on-watch recon): the per-sport
+# profiles / data screens (GARMIN/Sports), device settings (GARMIN/Settings), the watch's own
+# restorable backup blobs (GARMIN/Backup/Backups, incl. settings_backup.bak), Connect IQ app +
+# watch-face settings and data (GARMIN/Apps/SETTINGS + Apps/DATA), routes (GARMIN/Courses),
+# workouts, saved locations, gear, segments, pace bands, power guides, records, goals, schedule,
+# custom maps. The full list is the TARGETS array below. Heavy health telemetry is excluded by
+# default (syncs to Connect; large) — opt in with GARMIN_BACKUP_HEALTH=1.
 #
 # It reuses the voice importer's reliable device engine (PTPCamera suppression + single-session
 # bulk download), so a folder full of files comes across in one go instead of one-per-session.
@@ -19,7 +20,7 @@
 # Config (shared ~/.config/garmin-voice-export/config):
 #   GARMIN_SETTINGS_BACKUP=1     enable on connect
 #   GARMIN_SETTINGS_DEST         where it goes (default <root>/Settings, or ~/Documents/Garmin Settings)
-#   GARMIN_BACKUP_CONTENT=1      also mirror Courses + Workouts
+#   GARMIN_BACKUP_HEALTH=1       also mirror heavy health telemetry (Monitor/Metrics/Sleep)
 
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -46,13 +47,27 @@ trap 'ptp_suppress_stop; rm -rf "$TMP" "$LOCK"' EXIT
 
 # targets: "label|on-watch path under the storage base|dest subfolder"
 TARGETS=(
-  "Sports|GARMIN/Sports|Sports"
-  "Device|GARMIN/Settings|Device"
-  "Device Backup|GARMIN/Backup/Backups|Device Backup"
-  "Connect IQ|GARMIN/Apps/SETTINGS|Connect IQ"
+  "Sports|GARMIN/Sports|Sports"                       # per-sport profiles / data screens
+  "Device|GARMIN/Settings|Device"                     # device settings
+  "Device Backup|GARMIN/Backup/Backups|Device Backup" # the watch's own restorable backup blobs
+  "Connect IQ|GARMIN/Apps/SETTINGS|Connect IQ"        # CIQ app + watch-face settings (.SET)
+  "Connect IQ Data|GARMIN/Apps/DATA|Connect IQ Data"  # CIQ app data store (incl. watch-face data)
+  "Courses|GARMIN/Courses|Courses"                    # routes
+  "Workouts|GARMIN/Workouts|Workouts"                 # structured workouts
+  "Locations|GARMIN/Location|Locations"               # saved positions / waypoints
+  "Gear|GARMIN/Gear|Gear"                             # gear (shoes/bikes) tracking
+  "Segments|GARMIN/Seg_List|Segments"                 # segments list
+  "Pace Bands|GARMIN/PaceBands|Pace Bands"
+  "Power Guides|GARMIN/PowerGuide|Power Guides"
+  "Records|GARMIN/Records|Records"                    # personal records
+  "Goals|GARMIN/Goals|Goals"
+  "Schedule|GARMIN/Schedule|Schedule"
+  "Custom Maps|GARMIN/CustomMaps|Custom Maps"
 )
-if [ "${GARMIN_BACKUP_CONTENT:-0}" = "1" ]; then
-  TARGETS+=("Courses|GARMIN/Courses|Courses" "Workouts|GARMIN/Workouts|Workouts")
+# Heavy health telemetry (steps/HR/sleep/...) is excluded by default: it's large, churny, and
+# already syncs to Garmin Connect. Opt in with GARMIN_BACKUP_HEALTH=1.
+if [ "${GARMIN_BACKUP_HEALTH:-0}" = "1" ]; then
+  TARGETS+=("Monitor|GARMIN/Monitor|Health/Monitor" "Metrics|GARMIN/Metrics|Health/Metrics" "Sleep|GARMIN/Sleep|Health/Sleep")
 fi
 
 SET_NEW=0 SET_FAIL=0 SET_FOLDERS=0

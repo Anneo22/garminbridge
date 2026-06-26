@@ -112,9 +112,9 @@ see `config.example`). Sensible defaults mean you usually need none.
 | `GARMIN_ACTIVITY_BACKUP` | `0` | `1` to also copy activity `.fit` files on connect (copy-only) |
 | `GARMIN_ACTIVITY_DEST` | `~/Documents/Garmin Activities` | Where activity files are saved |
 | `GARMIN_ACTIVITY_MAX` | `0` | Max activity files to fetch per run (`0` = all) |
-| `GARMIN_SETTINGS_BACKUP` | `0` | `1` to also back up settings + sport profiles on connect (copy-only) |
+| `GARMIN_SETTINGS_BACKUP` | `0` | `1` to also back up settings, sport profiles, routes, and more on connect (copy-only) |
 | `GARMIN_SETTINGS_DEST` | `<root>/Settings` | Where the settings backup goes (else `~/Documents/Garmin Settings`) |
-| `GARMIN_BACKUP_CONTENT` | `0` | `1` to also mirror Courses + Workouts in the settings backup |
+| `GARMIN_BACKUP_HEALTH` | `0` | `1` to also mirror heavy health telemetry (Monitor/Metrics/Sleep) |
 
 > Writing to `~/Documents` requires Full Disk Access for the agent's interpreter
 > (`/bin/bash`) under macOS privacy rules. Point `GARMIN_VOICE_DEST` at a home-root
@@ -242,18 +242,16 @@ Turn on `GARMIN_SETTINGS_BACKUP=1` to also copy your **settings and sport profil
 Mac on connect, so a new or upgraded watch can be set back up the way you had it. Also
 copy-only, never deletes. Run it now with `garminbridge settings`.
 
-It mirrors (into `<root>/Settings/`):
+It mirrors (into `<root>/Settings/`): the per-sport profiles (`Sports/` — the data-screen
+"faces"), device settings (`Device/`), the watch's own restorable backup blobs
+(`Device Backup/`, incl. `settings_backup.bak`), Connect IQ app + watch-face settings and
+data (`Connect IQ/`, `Connect IQ Data/`), **routes** (`Courses/`), workouts, saved locations,
+gear, segments, pace bands, power guides, records, goals, and schedule.
 
-| Folder | From the watch | What it is |
-|---|---|---|
-| `Sports/` | `GARMIN/Sports/` | the per-sport profiles / data-screen "faces", one `.fit` each |
-| `Device/` | `GARMIN/Settings/` | device settings (`Settings.fit`, `FocusSettings.bin`) |
-| `Device Backup/` | `GARMIN/Backup/Backups/` | the watch's own settings backup blob (`settings_backup.bak`) |
-| `Connect IQ/` | `GARMIN/Apps/SETTINGS/` | Connect IQ app settings |
-
-Add `GARMIN_BACKUP_CONTENT=1` to also mirror your **Courses** and **Workouts**. Each folder
-is fingerprinted, so unchanged folders are skipped on later connects. (Restoring these back
-onto a watch is a separate, careful step — this is the backup half.)
+Each folder is fingerprinted, so unchanged folders are skipped on later connects. Heavy health
+telemetry is excluded by default (it syncs to Garmin Connect); opt in with
+`GARMIN_BACKUP_HEALTH=1`. (Restoring these back onto a watch is a separate, careful step —
+this is the backup half.)
 
 ## How it works
 

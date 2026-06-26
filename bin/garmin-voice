@@ -36,6 +36,8 @@ mkdir -p "$(dirname "$PAUSE_FLAG")"
 # release every process that holds the watch's single USB interface
 free_device(){
   pkill -9 -f "export-voice-notes.sh" 2>/dev/null
+  pkill -9 -f "backup-activities.sh" 2>/dev/null
+  pkill -9 -f "backup-settings.sh" 2>/dev/null
   pkill -9 -x gphoto2 2>/dev/null
   killall PTPCamera 2>/dev/null
   rm -rf /tmp/garmin_voice_export.lock 2>/dev/null
