@@ -38,7 +38,10 @@ GVE_CONFIG="${GVE_CONFIG:-$HOME/.config/garmin-voice-export/config}"
 # NOTE on ~/Documents: macOS TCC blocks background launchd agents from writing here
 # (also ~/Desktop, ~/Downloads) WITHOUT a manual Full Disk Access grant for the
 # agent's interpreter (/bin/bash). With FDA granted it works. Override with env var.
-DEST="${GARMIN_VOICE_DEST:-$HOME/Documents/Voice Memos}"
+# Resolve where we write: the organised "Garmin Bridge" root if set, legacy default otherwise.
+# Anchor to THIS file (BASH_SOURCE), not $0, so it also works when sourced load-only.
+. "$(dirname "${BASH_SOURCE[0]}")/gve-paths.sh"; gve_resolve_paths
+DEST="$GVE_VOICE_DEST"
 # on-watch folder (relative to the discovered storage base). Standard across Garmin
 # voice-note watches; overridable in case a model differs.
 SUBPATH="${GARMIN_VOICE_SUBPATH:-GARMIN/Audio/VoiceNotes}"
@@ -99,14 +102,19 @@ ptp_suppress_stop(){ [ -n "${SUPPRESS_PID:-}" ] && kill "$SUPPRESS_PID" 2>/dev/n
 # macOS desktop notification. With terminal-notifier (brew) the notification is
 # CLICKABLE and opens $3 (a folder) on click; otherwise falls back to a plain
 # (non-clickable) osascript notification. notify <title> <message> [path-to-open]
+# resolve the GarminBridge icon shown on notifications: explicit override first, then the
+# installed copy, then the in-repo asset. Empty (no -appIcon) if none is found.
+gve_icon(){ local p
+  for p in "${GVE_ICON:-}" "$HOME/.config/garmin-voice-export/icon.png" "$SELF_DIR/../assets/garminbridge-icon.png"; do
+    [ -n "$p" ] && [ -f "$p" ] && { printf '%s' "$p"; return 0; }
+  done; return 1; }
 notify(){ [ "$NOTIFY" -eq 1 ] || return 0
-  local t="$1" m="$2" openpath="${3:-}"
+  local t="$1" m="$2" openpath="${3:-}" ic; ic="$(gve_icon || true)"
   if command -v terminal-notifier >/dev/null 2>&1; then
-    if [ -n "$openpath" ]; then
-      terminal-notifier -title "$t" -message "$m" -sound Glass -execute "open \"$openpath\"" >/dev/null 2>&1 || true
-    else
-      terminal-notifier -title "$t" -message "$m" -sound Glass >/dev/null 2>&1 || true
-    fi
+    local args=(-title "$t" -message "$m" -sound Glass)
+    [ -n "$ic" ] && args+=(-appIcon "$ic")
+    [ -n "$openpath" ] && args+=(-execute "open \"$openpath\"")
+    terminal-notifier "${args[@]}" >/dev/null 2>&1 || true
   else
     osascript -e "display notification \"${m//\"/}\" with title \"${t//\"/}\" sound name \"Glass\"" >/dev/null 2>&1 || true
   fi; }
@@ -192,6 +200,12 @@ manifest_pruned(){ awk -F'\t' -v id="$1" '$1==id{f=($3=="pruned")} END{exit !f}'
 manifest_mark_pruned(){ awk -F'\t' -v id="$1" 'BEGIN{OFS="\t"} $1==id{print $1,$2,"pruned"; next} {print}' \
     "$MANIFEST" > "$MANIFEST.tmp" && mv "$MANIFEST.tmp" "$MANIFEST"; }
 txt_for(){ echo "${1%.*}.txt"; }                  # transcript path next to an audio file
+# where a manifested note actually lives now: the Voice Memo inbox, or its Archive subfolder
+# (a handled/transcribed note is moved there). Falls back to the inbox path if neither exists.
+local_path(){ local lf="$1"
+  if [ -f "$DEST/$lf" ]; then printf '%s' "$DEST/$lf"
+  elif [ -f "$DEST/Archive/$lf" ]; then printf '%s' "$DEST/Archive/$lf"
+  else printf '%s' "$DEST/$lf"; fi; }
 
 # optional, opt-in post-processing of a freshly-saved memo: transcription + Obsidian.
 # Both are no-ops unless configured (GVE_TRANSCRIBE=1 / GVE_OBSIDIAN_VAULT set).
@@ -206,6 +220,16 @@ post_process(){ local wav="$1" txt=""
   if [ "${GVE_TRANSCRIBE:-0}" = "1" ]; then
     if txt="$(GVE_CONFIG="$GVE_CONFIG" "$SELF_DIR/transcribe-memo.sh" "$wav" 2>>"$LOG")"; then
       log "    transcribed -> $(basename "$txt")"
+      # a transcribed note is "handled": move it (and its transcript) into Voice Memo/Archive,
+      # so the inbox holds only un-handled notes. Opt out with GVE_VOICE_ARCHIVE=0.
+      if [ "${GVE_VOICE_ARCHIVE:-1}" = "1" ]; then
+        local adir="$DEST/Archive"
+        if mkdir -p "$adir" 2>/dev/null && mv -f "$wav" "$adir/" 2>/dev/null; then
+          wav="$adir/$(basename "$wav")"
+          [ -n "$txt" ] && [ -f "$txt" ] && mv -f "$txt" "$adir/" 2>/dev/null && txt="$adir/$(basename "$txt")"
+          log "    archived -> Archive/$(basename "$wav")"
+        fi
+      fi
     else log "    (transcription failed; audio kept)"; txt=""; fi
   fi
   [ -n "${GVE_OBSIDIAN_VAULT:-}" ] && write_obsidian "$wav" "$txt"; }
@@ -299,7 +323,7 @@ do_sync(){
     local id="${epoch}_${kb}" lf
     lf="$(manifest_file "$id")"
     if [ -n "$lf" ]; then
-      valid_wav "$DEST/$lf" "$kb" && continue
+      valid_wav "$(local_path "$lf")" "$kb" && continue
       manifest_pruned "$id" && continue
     fi
     needidx="$needidx $num"
@@ -322,7 +346,7 @@ EOF
     base="$(ts_name "$epoch")"
     lf="$(manifest_file "$id")"
     if [ -n "$lf" ]; then
-      saved="$lf"; wavpath="$DEST/$lf"
+      saved="$lf"; wavpath="$(local_path "$lf")"
       if valid_wav "$wavpath" "$kb"; then have=1
       elif manifest_pruned "$id"; then have=1; pruned=1; fi
     fi

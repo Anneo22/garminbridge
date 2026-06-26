@@ -9,6 +9,11 @@
 #   garminbridge resume       turn auto-import back ON.
 #   garminbridge free         release the watch from this tool and macOS PTPCamera right now
 #                             (one-shot). Use when "the Mac won't see the watch", then open your app.
+#   garminbridge root [PATH]  show / set the single output root (a "Garmin Bridge" folder with
+#                             Voice Memo + Backups inside). No PATH prints the current root.
+#   garminbridge device [N]   optional sub-level under the root for several watches / an Edge /
+#                             users (e.g. "Fenix 8"). 'device none' clears it.
+#   garminbridge migrate      move existing files from the legacy ~/Documents folders into the root.
 #   garminbridge status       show current state.
 
 set -uo pipefail
@@ -20,8 +25,9 @@ UID_NUM="$(id -u)"
 PAUSE_FLAG="${GVE_PAUSE_FLAG:-$HOME/.config/garmin-voice-export/paused}"
 GVE_CONFIG="${GVE_CONFIG:-$HOME/.config/garmin-voice-export/config}"
 [ -f "$GVE_CONFIG" ] && . "$GVE_CONFIG"            # source first so config can set the destination
-DEST="${GARMIN_VOICE_DEST:-$HOME/Documents/Voice Memos}"
-ACT_DEST="${GARMIN_ACTIVITY_DEST:-$HOME/Documents/Garmin Activities}"
+. "$SELF_DIR/gve-paths.sh"; gve_resolve_paths      # organised "Garmin Bridge" root (legacy default if unset)
+DEST="$GVE_VOICE_DEST"
+ACT_DEST="$GVE_ACT_DEST"
 mkdir -p "$(dirname "$PAUSE_FLAG")"
 
 # release every process that holds the watch's single USB interface
@@ -38,6 +44,26 @@ cfg_set(){ mkdir -p "$(dirname "$GVE_CONFIG")"; touch "$GVE_CONFIG"
   printf "%s='%s'\n" "$1" "$2" >> "$GVE_CONFIG"; }   # single-quote so paths with spaces survive sourcing
 cfg_unset(){ [ -f "$GVE_CONFIG" ] || return 0
   grep -vE "^$1=" "$GVE_CONFIG" > "$GVE_CONFIG.tmp" 2>/dev/null || true; mv "$GVE_CONFIG.tmp" "$GVE_CONFIG"; }
+
+# move files from a legacy folder into an organised-layout folder. Merges/dedups the
+# manifest and appends the log if both sides have one; never overwrites a data file.
+migrate_one(){ local src="$1" dst="$2" lbl="$3" f bn n=0
+  [ -d "$src" ] || { echo "  $lbl: nothing at $src"; return 0; }
+  [ "$src" = "$dst" ] && { echo "  $lbl: already in place"; return 0; }
+  mkdir -p "$dst"
+  shopt -s nullglob dotglob 2>/dev/null
+  for f in "$src"/*; do
+    [ -e "$f" ] || continue
+    bn="$(basename "$f")"
+    case "$bn" in
+      .synced.tsv)            if [ -f "$dst/.synced.tsv" ]; then cat "$f" >> "$dst/.synced.tsv"; rm -f "$f"; else mv -f "$f" "$dst/"; fi; continue ;;
+      export.log|backup.log)  if [ -f "$dst/$bn" ]; then cat "$f" >> "$dst/$bn"; rm -f "$f"; else mv -f "$f" "$dst/"; fi; continue ;;
+      .DS_Store)              rm -f "$f"; continue ;;
+    esac
+    if [ -e "$dst/$bn" ]; then echo "  skip (already there): $bn"; else mv -f "$f" "$dst/" && n=$((n+1)); fi
+  done
+  [ -f "$dst/.synced.tsv" ] && { awk -F'\t' '!seen[$1]++' "$dst/.synced.tsv" > "$dst/.synced.tsv.tmp" && mv "$dst/.synced.tsv.tmp" "$dst/.synced.tsv"; }
+  echo "  $lbl: moved $n file(s) -> $dst"; }
 
 case "${1:-status}" in
   pause|off|stop)
@@ -57,11 +83,33 @@ case "${1:-status}" in
     shift; free_device; sleep 1; exec "$EXPORT" "$@" ;;
   activities|backup)
     shift; free_device; sleep 1; exec "$ACTIVITIES" "$@" ;;
+  root)
+    if [ -z "${2:-}" ]; then echo "${GARMIN_BRIDGE_ROOT:-(unset — using the legacy ~/Documents layout)}"; exit 0; fi
+    cfg_set GARMIN_BRIDGE_ROOT "$2"
+    cfg_unset GARMIN_VOICE_DEST; cfg_unset GARMIN_ACTIVITY_DEST     # let the root layout actually apply
+    GARMIN_BRIDGE_ROOT="$2"; unset GARMIN_VOICE_DEST GARMIN_ACTIVITY_DEST; gve_resolve_paths
+    mkdir -p "$GVE_VOICE_DEST/Archive" "$GVE_ACT_DEST" 2>/dev/null
+    echo "output root -> $2"
+    echo "  voice notes -> $GVE_VOICE_DEST"
+    echo "  backups     -> $GVE_ACT_DEST"
+    echo "  move existing files in with:  garminbridge migrate" ;;
+  device)
+    case "${2:-}" in
+      "")          echo "${GARMIN_BRIDGE_DEVICE:-(none)}" ;;
+      none|--none) cfg_unset GARMIN_BRIDGE_DEVICE; echo "device sub-folder cleared" ;;
+      *)           cfg_set GARMIN_BRIDGE_DEVICE "$2"; echo "device sub-folder -> $2 (under the output root)" ;;
+    esac ;;
+  migrate)
+    echo "Migrating legacy files into the organised layout…"
+    migrate_one "$HOME/Documents/Voice Memos" "$DEST" "voice"
+    migrate_one "$HOME/Documents/Garmin Activities" "$ACT_DEST" "backups"
+    echo "Done." ;;
   status)
     echo "GarminBridge status"
     echo "  auto-import : $([ -f "$PAUSE_FLAG" ] && echo 'PAUSED' || echo 'active')"
     if launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1; then echo "  watcher     : installed (instant on-connect)"; else echo "  watcher     : not installed (run bin/install-autorun.sh)"; fi
     echo "  destination : $DEST"
+    echo "  output root : ${GARMIN_BRIDGE_ROOT:-legacy ~/Documents layout}${GARMIN_BRIDGE_DEVICE:+  (device: $GARMIN_BRIDGE_DEVICE)}"
     case "${GARMIN_VOICE_DELETE:-}" in
       ""|0|keep|no|off)             dm="keep on watch" ;;
       transcribed|after-transcript) dm="after transcript" ;;
@@ -77,5 +125,5 @@ case "${1:-status}" in
   get)   [ -f "$GVE_CONFIG" ] && grep -E "^$2=" "$GVE_CONFIG" | head -1 | cut -d= -f2- | sed "s/^['\"]//; s/['\"]$//" || true ;;
   -h|--help|help)
     grep '^#' "$0" | grep -v '^#!' | sed 's/^# \{0,1\}//' ;;
-  *) echo "usage: garminbridge {status|voice|activities|pause|resume|free|set KEY VAL|unset KEY}" >&2; exit 2 ;;
+  *) echo "usage: garminbridge {status|voice|activities|pause|resume|free|root [PATH]|device [NAME]|migrate|set KEY VAL|unset KEY}" >&2; exit 2 ;;
 esac

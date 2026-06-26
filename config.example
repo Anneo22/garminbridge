@@ -2,7 +2,15 @@
 # Everything here is optional; with no config file, transcription/Obsidian stay OFF.
 # bin/install-transcription.sh writes this for you (and chmod 600, since it holds keys).
 
-# --- where memos go (optional; defaults to ~/Documents/Voice Memos) ---
+# --- ORGANISED OUTPUT (recommended): one root folder that holds everything. With this set,
+#     voice notes go to  <root>/Voice Memo  and activity backups to  <root>/Backups.
+#     Change it from the menu bar ("Change output folder…") or:  garminbridge root PATH
+#     then move existing files in with:  garminbridge migrate ---
+# GARMIN_BRIDGE_ROOT="$HOME/Documents/Garmin Bridge"
+# GARMIN_BRIDGE_DEVICE="Fenix 8"     # optional sub-level for several watches / an Edge / users
+
+# --- where memos go (optional override; beats the root above). Defaults to
+#     ~/Documents/Voice Memos when no root is set. ---
 # GARMIN_VOICE_DEST="$HOME/Documents/Voice Memos"
 
 # --- filename format (a `date` format string applied to the recording time) ---

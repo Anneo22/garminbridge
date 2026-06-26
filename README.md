@@ -96,7 +96,9 @@ see `config.example`). Sensible defaults mean you usually need none.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `GARMIN_VOICE_DEST` | `~/Documents/Voice Memos` | Where memos are saved |
+| `GARMIN_BRIDGE_ROOT` | unset | One root folder for everything: voice notes go to `<root>/Voice Memo`, activity backups to `<root>/Backups`. Recommended; set it from the menu bar or `garminbridge root PATH` |
+| `GARMIN_BRIDGE_DEVICE` | unset | Optional sub-level under the root for several watches / an Edge / users (e.g. `Fenix 8`) |
+| `GARMIN_VOICE_DEST` | `~/Documents/Voice Memos` | Where memos are saved (overrides the root layout if set) |
 | `GARMIN_VOICE_DELETE` | `keep` | Delete from the watch: `keep` \| `now` (after a verified copy) \| `transcribed` (after a transcript too) |
 | `GVE_AUDIO_RETENTION_DAYS` | unset | Drop the local `.wav` this many days after recording, keeping the `.txt` (`0` = as soon as transcribed). Never deletes un-transcribed audio while transcription is on |
 | `GARMIN_VOICE_SUBPATH` | `GARMIN/Audio/VoiceNotes` | On-watch folder (override if a model differs) |
@@ -114,6 +116,29 @@ see `config.example`). Sensible defaults mean you usually need none.
 > Writing to `~/Documents` requires Full Disk Access for the agent's interpreter
 > (`/bin/bash`) under macOS privacy rules. Point `GARMIN_VOICE_DEST` at a home-root
 > folder (e.g. `~/Voice Memos`) to avoid that.
+
+## Output folder
+
+By default voice notes land in `~/Documents/Voice Memos` and activity backups in
+`~/Documents/Garmin Activities`. For one tidy home instead, set an **output root**
+(from the menu bar's "Change output folder…", or the CLI):
+
+```
+garminbridge root "$HOME/Documents/Garmin Bridge"   # pick the location
+garminbridge migrate                                # move existing files in (never overwrites)
+```
+
+That gives you:
+
+```
+Garmin Bridge/
+├── Voice Memo/        new notes  (Archive/ holds ones already transcribed/handled)
+└── Backups/           activity .fit files
+```
+
+Bridging more than one device or person? Add a sub-level with
+`garminbridge device "Fenix 8"` (a watch + an Edge, several watches, several users) →
+`Garmin Bridge/Fenix 8/Voice Memo`, and so on.
 
 ## Transcription (optional)
 

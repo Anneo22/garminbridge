@@ -109,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             check("Delete after 30 days", retDays == "30", #selector(setRet30)),
             check("Delete after 90 days", retDays == "90", #selector(setRet90)),
         ]))
-        m.addItem(action("Change voice memos folder…", #selector(changeDest)))
+        m.addItem(action("Change output folder…", #selector(changeRoot)))
         m.addItem(.separator())
 
         // Transcription, fully controllable here
@@ -205,12 +205,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         notify("Transcript cleanup on (\(id)).")
     }
 
-    @objc func changeDest() {
+    // Pick the single output root (the "Garmin Bridge" folder that holds Voice Memo + Backups),
+    // then offer to move existing files into it. The root is what the user controls; per-feature
+    // paths derive from it.
+    @objc func changeRoot() {
         NSApp.activate(ignoringOtherApps: true)
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true
-        panel.prompt = "Use this folder"; panel.message = "Where should voice memos be saved?"
-        if panel.runModal() == .OK, let url = panel.url { ctl(["set", "GARMIN_VOICE_DEST", url.path]) }
+        panel.prompt = "Use as Garmin Bridge folder"
+        panel.message = "Pick where GarminBridge keeps everything. Voice Memo and Backups live inside."
+        guard panel.runModal() == .OK, var root = panel.url else { return }
+        // keep the user's pick tidy: nest a "Garmin Bridge" folder unless they already chose one.
+        if root.lastPathComponent != "Garmin Bridge" { root = root.appendingPathComponent("Garmin Bridge") }
+        ctl(["root", root.path])
+        let a = NSAlert()
+        a.messageText = "Move existing files in?"
+        a.informativeText = "Move your current voice memos and activity backups into \(root.lastPathComponent)? Existing files are never overwritten."
+        a.addButton(withTitle: "Move them"); a.addButton(withTitle: "Leave them")
+        if a.runModal() == .alertFirstButtonReturn {
+            DispatchQueue.global().async { ctl(["migrate"]); notify("Moved your files into \(root.lastPathComponent).") }
+        } else { notify("New files will go into \(root.lastPathComponent).") }
     }
 }
 

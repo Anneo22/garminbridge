@@ -34,6 +34,8 @@ export GVE_LOAD_ONLY=1
 . "$SELF_DIR/export-voice-notes.sh"
 unset GVE_LOAD_ONLY
 
+# the engine (sourced above) resolved the organised-root layout; honour it for activities too.
+ACT_DEST="${GVE_ACT_DEST:-$ACT_DEST}"
 # point the shared globals at the activity destination, then set up our own run state
 DEST="$ACT_DEST"; SUBPATH="$ACT_SUBPATH"; NOTE_REGEX="$ACT_REGEX"
 MANIFEST="$ACT_DEST/.synced.tsv"; LOG="$ACT_DEST/backup.log"
