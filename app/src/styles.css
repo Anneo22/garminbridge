@@ -26,6 +26,7 @@
   --accent-soft: rgba(253, 78, 90, .12);
   --accent-2: #2426e0;     /* Klein blue, the spark */
   --accent-2-soft: rgba(36, 38, 224, .10);
+  --accent-2-text: #2426e0; /* Klein AS small text; dark brightens it to stay AA on the pill */
   --danger: #b01526;
   --danger-soft: rgba(176, 21, 38, .10);
   --danger-line: rgba(176, 21, 38, .28);   /* danger hairline, tracks --danger */
@@ -199,7 +200,7 @@ button { font-family: inherit; color: inherit; }
 .route-wind-line .ico { font-size: 15px; color: var(--ink-3); flex: none; margin-top: 1px; }
 .wind-detail { color: var(--ink-2); letter-spacing: .02em; }
 .wind-verdict { color: var(--ink-3); margin-top: 3px; }
-.route-wind-line.wind-tail .ico, .route-wind-line.wind-tail .wind-verdict { color: var(--accent-2); }
+.route-wind-line.wind-tail .ico, .route-wind-line.wind-tail .wind-verdict { color: var(--accent-2-text); }
 .row-main { min-width: 0; }
 .row-name { font-family: var(--serif); font-size: 16.5px; font-weight: 600; letter-spacing: -.005em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -219,8 +220,11 @@ button { font-family: inherit; color: inherit; }
    muted otherwise, so a glance tells you if the wind favours the ride back */
 .route-wind { gap: 4px; color: var(--ink-2); }
 .route-wind .ico { color: inherit; }
-.route-wind.wind-tail { color: var(--accent-2); background: var(--accent-2-soft); font-weight: 600;
-  border-radius: var(--r); padding: 2px 8px; margin-left: 1px; }
+.route-wind.wind-tail { color: var(--accent-2-text); background: var(--accent-2-soft); font-weight: 600;
+  border-radius: var(--r); padding: 2px 8px; margin-left: 9px; }
+/* the generated "·" separator would land INSIDE the pill background; the pill separates
+   itself, so it carries no dot (margin-left above keeps the rhythm) */
+.row-metrics > span + span.wind-tail::before { content: none; margin: 0; }
 /* forecast conditions line (row 2): weather glyph + temp, feels-like, wind strength,
    verdict; the weather + temp read as the primary "how to dress" cue */
 .row-conditions { margin-top: 3px; }
@@ -346,6 +350,7 @@ button { font-family: inherit; color: inherit; }
     --bg: #1a1a1a; --surface: #212121; --surface-2: #262626; --ink: #d4d4d4; --ink-2: #999999;
     --ink-3: #868686; --line: #333333; --line-2: #3d3d3d; --accent: #fd4e5a; --accent-pop: #fd4e5a;
     --accent-soft: rgba(253,78,90,.16); --accent-2: #5a5cf5; --accent-2-soft: rgba(90,92,245,.20);
+    --accent-2-text: #8b8dff;
     --danger: #d9434e; --danger-soft: rgba(217,67,78,.16);
     --danger-line: rgba(217,67,78,.35); --danger-hover: #c62230; --danger-text: #e5636c;
     --shadow: 0 1px 1px rgba(0,0,0,.5), 0 16px 44px rgba(0,0,0,.6);
