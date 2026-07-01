@@ -191,7 +191,7 @@ function daylightLabel(w) {
 // The forecast conditions line (row line 2, present only when a slot is picked): a
 // weather glyph + temp, feels-like, the wind's strength (km/h) and where it blows from,
 // then the tailwind-home verdict. It answers "how do I dress, and is the wind on my back
-// on the way home?". Teal is kept for the good case only (tailwind).
+// on the way home?". Klein is kept for the good case only (tailwind).
 function conditionsLine(w, bearing) {
   const items = [];
   const wx = [icon(weatherIcon(w.code))];
@@ -202,7 +202,7 @@ function conditionsLine(w, bearing) {
   const rain = rainToken(w);
   if (rain) items.push(rain);
   items.push(el("span", { class: "rm-clip", title: `Wind from ${degCompass(w.deg)}` },
-    [icon("wind"), document.createTextNode(`${w.speed} km/h`)]));
+    [icon("wind"), document.createTextNode(`${w.speed} km/h from ${degCompass(w.deg)}`)]));
   const v = windVerdict(w.deg, bearing);
   items.push(el("span", { class: "route-wind wind-" + v, text: VERDICT_WORD[v] }));
   return el("div", { class: "row-meta row-metrics row-conditions" }, items);
@@ -257,7 +257,7 @@ function windLine(w, bearing) {
     el("div", { class: "wind-text" }, [
       line(tempPart),
       line(rainPart),
-      line(`${w.deg}° · ${w.speed} km/h${gustPart}`),
+      line(`From ${degCompass(w.deg)} (${w.deg}°) · ${w.speed} km/h${gustPart}`),
       line(skyPart),
       line(airPart),
       el("div", { class: "wind-verdict", text: VERDICT_WORD[v] }),
