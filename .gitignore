@@ -26,3 +26,6 @@ recon.out
 
 # Phase 1 Connect prototype (venv, tokens, never publish)
 prototype/
+
+# Claude Code session dir (worktrees, local launch config; never publish)
+.claude/
