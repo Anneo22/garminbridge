@@ -202,7 +202,7 @@ function conditionsLine(w, bearing) {
   const rain = rainToken(w);
   if (rain) items.push(rain);
   items.push(el("span", { class: "rm-clip", title: `Wind from ${degCompass(w.deg)}` },
-    [icon("wind"), document.createTextNode(`${w.speed} km/h from ${degCompass(w.deg)}`)]));
+    [icon("wind"), document.createTextNode(`${w.speed} km/h from ${degCompass(w.deg)} (${w.deg}°)`)]));
   const v = windVerdict(w.deg, bearing);
   items.push(el("span", { class: "route-wind wind-" + v, text: VERDICT_WORD[v] }));
   return el("div", { class: "row-meta row-metrics row-conditions" }, items);

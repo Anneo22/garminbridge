@@ -144,7 +144,7 @@ button { font-family: inherit; color: inherit; }
 .list { padding-top: 6px; padding-bottom: 30px; }
 .group-head { display: flex; align-items: baseline; gap: 10px; padding: 24px 2px 7px; }
 .group-title { font-family: var(--serif); font-weight: 600; font-size: 19px; letter-spacing: -.01em; }
-.group-count { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+.group-count { font-family: var(--mono); font-size: 11.5px; color: var(--accent); }
 .group-head .rule { flex: 1; height: 1px; background: var(--line); align-self: center; }
 
 .row { display: grid; grid-template-columns: 20px 74px 1fr auto auto 26px; align-items: center; gap: 15px;
@@ -215,7 +215,7 @@ button { font-family: inherit; color: inherit; }
 .row-metrics .rm-clip { gap: 3px; }
 .row-metrics .ico { font-size: 11px; color: var(--ink-3); }
 .route-dir { gap: 4px; color: var(--ink); }
-.dir-glyph { color: var(--ink); font-weight: 700; }
+.dir-glyph { color: var(--accent); font-weight: 700; }
 /* forecast wind verdict on the row: Klein reserved for the good case (tailwind home),
    muted otherwise, so a glance tells you if the wind favours the ride back */
 .route-wind { gap: 4px; color: var(--ink-2); }
@@ -227,7 +227,9 @@ button { font-family: inherit; color: inherit; }
 .row-metrics > span + span.wind-tail::before { content: none; margin: 0; }
 /* forecast conditions line (row 2): weather glyph + temp, feels-like, wind strength,
    verdict; the weather + temp read as the primary "how to dress" cue */
-.row-conditions { margin-top: 3px; }
+/* the conditions line may run long (wind origin + degrees + the verdict pill); wrap as
+   whole items rather than clipping the pill, the most valuable thing on the line */
+.row-conditions { margin-top: 3px; flex-wrap: wrap; overflow: visible; white-space: normal; row-gap: 3px; }
 .row-conditions .cond-wx { gap: 4px; color: var(--ink); }
 .row-conditions .cond-wx .ico { font-size: 13px; color: var(--ink-2); }
 .row-conditions .cond-feels { color: var(--ink-3); }
