@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GarminBridge Content Manager</title>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="wrap">
+        <div class="brand">
+          <!-- GarminBridge mark: a clean bridge arch with the hot-coral crossing node, softly faded. -->
+          <svg class="logomark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <path d="M6 25 C6 12 10 8 16 8 C22 8 26 12 26 25" fill="none" stroke="currentColor"
+                  stroke-width="2.1" stroke-linecap="round" />
+            <circle class="node-h1" cx="16" cy="8" r="6.6" />
+            <circle class="node-h2" cx="16" cy="8" r="4.7" />
+            <circle class="node" cx="16" cy="8" r="2.9" />
+          </svg>
+          <div>
+            <div class="brand-title">Content Manager</div>
+            <div class="brand-sub kicker">GarminBridge</div>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div id="watch-pill" class="watch-pill" title="Where the watch data comes from">
+            <span class="ico" data-icon="device-watch"></span>
+            <span class="wp-dot"></span><span id="watch-pill-text">Checking</span>
+          </div>
+          <button id="refresh-btn" class="btn btn-ghost" title="Re-scan the watch over USB (live)">
+            <span class="ico ico-spin" data-icon="refresh"></span><span>Refresh</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Stale-route reminder. Hidden when the watch is clean. -->
+    <div id="stale-banner" class="stale-banner" hidden>
+      <div class="wrap">
+        <span class="ico" data-icon="alert-triangle"></span>
+        <span id="stale-text"></span>
+        <button id="stale-review" class="btn btn-danger">Review and clean</button>
+        <button id="stale-dismiss" class="banner-x" title="Dismiss for now"><span class="ico" data-icon="x"></span></button>
+      </div>
+    </div>
+
+    <section class="toolbar">
+      <div class="wrap">
+        <div class="search-wrap">
+          <span class="ico" data-icon="search"></span>
+          <input id="search" class="search" type="search" placeholder="Search workouts, routes and places" />
+        </div>
+        <div class="seg" id="filter-loc" role="group" aria-label="Filter by where items live">
+          <button class="seg-btn is-active" aria-pressed="true" data-loc="on-watch">On my watch</button>
+          <button class="seg-btn" aria-pressed="false" data-loc="all">All</button>
+          <button class="seg-btn" aria-pressed="false" data-loc="connect-only">Connect only</button>
+          <button class="seg-btn" aria-pressed="false" data-loc="watch-only">Watch only</button>
+        </div>
+        <div class="seg" id="filter-kind" role="group" aria-label="Filter by kind">
+          <button class="seg-btn is-active" aria-pressed="true" data-kind="all">All</button>
+          <button class="seg-btn" aria-pressed="false" data-kind="workout">Workouts</button>
+          <button class="seg-btn" aria-pressed="false" data-kind="course">Routes</button>
+          <button class="seg-btn" aria-pressed="false" data-kind="location">Places</button>
+        </div>
+        <select id="filter-sport" class="sport-select" title="Filter by sport">
+          <option value="">All sports</option>
+        </select>
+        <div class="wind-wrap" title="Show the forecast weather and wind at each route for when you plan to ride, and whether the wind favours the ride home">
+          <span class="ico" data-icon="sun"></span>
+          <select id="wind-when" class="sport-select wind-select">
+            <option value="">Weather: off</option>
+            <option value="now">Now</option>
+            <option value="in3h">In 3 hours</option>
+            <option value="tomAM">Tomorrow morning</option>
+            <option value="tomPM">Tomorrow afternoon</option>
+            <option value="in2d">In 2 days</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <div id="bulkbar" class="bulkbar" hidden>
+      <div class="wrap">
+        <span id="bulk-count">0 selected</span>
+        <div class="spacer"></div>
+        <button id="bulk-remove" class="btn btn-danger">Remove from watch</button>
+        <button id="bulk-clear" class="btn btn-ghost">Clear</button>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <main id="list" class="list wrap" aria-live="polite"></main>
+    </div>
+
+    <footer class="statusline">
+      <div class="wrap">
+        <span id="status-counts"></span>
+        <span class="spacer"></span>
+        <span id="status-updated"></span>
+      </div>
+    </footer>
+
+    <!-- Confirm modal: always names exactly what will change and where, before any apply. -->
+    <div id="modal" class="modal" hidden>
+      <div class="modal-card">
+        <div id="modal-title" class="modal-title"></div>
+        <div id="modal-lead" class="modal-lead"></div>
+        <ul id="modal-list" class="modal-list"></ul>
+        <div id="modal-warn" class="modal-warn" hidden></div>
+        <div class="modal-actions">
+          <button id="modal-cancel" class="btn btn-ghost">Cancel</button>
+          <button id="modal-confirm" class="btn btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <div id="scan" class="scan" hidden><div class="spinner"></div><div id="scan-text"></div></div>
+  </body>
+</html>

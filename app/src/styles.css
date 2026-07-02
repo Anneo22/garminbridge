@@ -1,0 +1,367 @@
+/* GarminBridge Content Manager. "Editorial instrument".
+   References: Stafforini (minimalist, elegant, academic, Source Serif 4, single centered column,
+   ornamental dinkus) + Naval / Visualize Value (monochrome geometric line art).
+   Signature palette: hot coral (#FD4E5A) primary + Klein blue (#2426E0) spark, on Stafforini
+   backgrounds (white / charcoal #1A1A1A), following the system. Source Serif 4 = content; mono =
+   instrument. No em-dashes in any visible string. */
+
+@font-face { font-family: "Source Serif 4"; font-style: normal; font-weight: 400;
+  font-display: swap; src: url("assets/fonts/source-serif-4-400.woff2") format("woff2"); }
+@font-face { font-family: "Source Serif 4"; font-style: normal; font-weight: 600;
+  font-display: swap; src: url("assets/fonts/source-serif-4-600.woff2") format("woff2"); }
+@font-face { font-family: "Source Serif 4"; font-style: italic; font-weight: 400;
+  font-display: swap; src: url("assets/fonts/source-serif-4-400-italic.woff2") format("woff2"); }
+
+:root {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f2f2f2;
+  --ink: #1a1a1a;
+  --ink-2: #555555;
+  --ink-3: #6f6f6f;        /* muted, meets AA on white for small text */
+  --line: #dddddd;         /* Stafforini hairline */
+  --line-2: #cccccc;
+  --accent: #e23742;       /* deepened hot coral, readable on white */
+  --accent-pop: #fd4e5a;   /* the brand vivid hot coral */
+  --accent-soft: rgba(253, 78, 90, .12);
+  --accent-2: #2426e0;     /* Klein blue, the spark */
+  --accent-2-soft: rgba(36, 38, 224, .10);
+  --accent-2-text: #2426e0; /* Klein AS small text; dark brightens it to stay AA on the pill */
+  --danger: #b01526;
+  --danger-soft: rgba(176, 21, 38, .10);
+  --danger-line: rgba(176, 21, 38, .28);   /* danger hairline, tracks --danger */
+  --danger-hover: #8f1220;                  /* danger button pressed-in, deepened */
+  --danger-text: #b01526;                   /* danger AS small text on a plain bg (AA on white) */
+
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --r: 6px;
+  --col: 1040px;
+  --shadow: 0 1px 1px rgba(10,14,16,.05), 0 12px 36px rgba(10,14,16,.12);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100vh; }
+body { display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); color: var(--ink);
+  font-family: var(--serif); font-size: 16px; line-height: 1.5;
+  -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+.spacer { flex: 1; }
+button { font-family: inherit; color: inherit; }
+.mono { font-family: var(--mono); }
+.tnum { font-variant-numeric: tabular-nums; }
+.kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-3); }
+
+.ico { display: inline-block; width: 1em; height: 1em; flex: none; background: currentColor;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center;
+  mask-position: center; -webkit-mask-size: contain; mask-size: contain; }
+
+.wrap { width: 100%; max-width: var(--col); margin: 0 auto; padding: 0 30px; }
+
+/* ---------- masthead ---------- */
+.masthead { border-bottom: 1px solid var(--line); background: var(--surface); -webkit-app-region: drag; }
+.masthead .wrap { display: flex; align-items: center; justify-content: space-between;
+  padding-top: 16px; padding-bottom: 15px; }
+.masthead button, .masthead .watch-pill { -webkit-app-region: no-drag; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand .logomark { width: 34px; height: 34px; color: var(--ink); flex: none; }
+.brand .logomark .node { fill: var(--accent-pop); }
+.brand .logomark .node-h1 { fill: var(--accent-pop); opacity: .13; }
+.brand .logomark .node-h2 { fill: var(--accent-pop); opacity: .26; }
+.brand-title { font-family: var(--serif); font-weight: 600; font-size: 24px; letter-spacing: -.015em;
+  line-height: 1.04; }
+.brand-sub { margin-top: 3px; }
+.topbar-right { display: flex; align-items: center; gap: 10px; }
+
+.watch-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px;
+  border: 1px solid var(--line-2); border-radius: var(--r); font-family: var(--mono); font-size: 11.5px;
+  color: var(--ink-2); background: var(--surface); }
+.watch-pill .ico { font-size: 14px; color: var(--ink-3); }
+.wp-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); }
+.watch-pill.is-live .wp-dot { background: var(--accent-2); box-shadow: 0 0 0 3px var(--accent-2-soft); }
+.watch-pill.is-live .ico { color: var(--accent-2); }
+
+/* ---------- buttons ---------- */
+.btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-2);
+  background: var(--surface); color: var(--ink); border-radius: var(--r);
+  padding: 8px 14px; font-family: var(--mono); font-size: 12px; letter-spacing: .02em;
+  cursor: pointer; transition: background .12s, border-color .12s, transform .06s; }
+.btn .ico { font-size: 15px; }
+.btn:hover { background: var(--surface-2); border-color: var(--ink-3); }
+.btn:active { transform: scale(.975); }
+.btn[disabled] { opacity: .4; cursor: not-allowed; }
+.btn-primary { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.btn-primary:hover { background: #333333; border-color: #333333; }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--ink-2); }
+.btn-ghost:hover { background: var(--surface-2); color: var(--ink); }
+.refreshing .ico-spin { animation: spin .9s linear infinite; }
+
+/* ---------- stale banner ---------- */
+.stale-banner { border-bottom: 1px solid var(--line); background: var(--accent-soft); }
+.stale-banner .wrap { display: flex; align-items: center; gap: 12px; padding: 12px 30px; }
+.stale-banner .ico { font-size: 18px; color: var(--accent); flex: none; }
+#stale-text { font-size: 15px; color: var(--ink); }
+.stale-banner em { font-style: italic; }
+.banner-x { margin-left: auto; background: transparent; border: none; color: var(--ink-3); cursor: pointer;
+  display: inline-flex; padding: 5px; border-radius: 5px; }
+.banner-x:hover { background: rgba(126,138,144,.18); color: var(--ink); }
+
+/* ---------- toolbar ---------- */
+.toolbar { border-bottom: 1px solid var(--line); background: var(--surface); }
+.toolbar .wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-top: 12px; padding-bottom: 12px; }
+.search-wrap { position: relative; flex: 1 1 200px; min-width: 160px; display: flex; align-items: center; }
+.search-wrap .ico { position: absolute; left: 11px; font-size: 15px; color: var(--ink-3); pointer-events: none; }
+.search { width: 100%; padding: 8px 12px 8px 33px; border: 1px solid var(--line-2); border-radius: var(--r);
+  font-family: var(--mono); font-size: 12.5px; background: var(--surface); color: var(--ink); }
+.search::placeholder { color: var(--ink-3); }
+.search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.seg { display: inline-flex; gap: 2px; }
+.seg-btn { border: 1px solid transparent; background: transparent; color: var(--ink-3);
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .03em; padding: 7px 10px; border-radius: var(--r);
+  cursor: pointer; white-space: nowrap; transition: color .1s, background .1s; }
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.is-active { color: var(--accent); background: var(--accent-soft); border-color: transparent; font-weight: 600; }
+.sport-select { padding: 7px 9px; border: 1px solid var(--line-2); border-radius: var(--r);
+  background: var(--surface); color: var(--ink-2); font-family: var(--mono); font-size: 11.5px; cursor: pointer; }
+/* the forecast-wind planner: a wind glyph + a slot picker (off by default) */
+.wind-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.wind-wrap .ico { font-size: 15px; color: var(--ink-3); flex: none; }
+
+/* ---------- bulk bar ---------- */
+.bulkbar { border-bottom: 1px solid var(--line); background: var(--ink); color: var(--surface); }
+.bulkbar .wrap { display: flex; align-items: center; gap: 12px; padding-top: 9px; padding-bottom: 9px; }
+#bulk-count { font-family: var(--mono); font-size: 12.5px; }
+.bulkbar .btn-ghost { color: var(--surface); opacity: .82; }
+.bulkbar .btn-ghost:hover { background: rgba(255,255,255,.12); color: var(--surface); opacity: 1; }
+
+/* ---------- list ---------- */
+.scroll { flex: 1; overflow-y: auto; }
+.list { padding-top: 6px; padding-bottom: 30px; }
+.group-head { display: flex; align-items: baseline; gap: 10px; padding: 24px 2px 7px; }
+.group-title { font-family: var(--serif); font-weight: 600; font-size: 19px; letter-spacing: -.01em; }
+.group-count { font-family: var(--mono); font-size: 11.5px; color: var(--accent); }
+.group-head .rule { flex: 1; height: 1px; background: var(--line); align-self: center; }
+
+.row { display: grid; grid-template-columns: 20px 74px 1fr auto auto 26px; align-items: center; gap: 15px;
+  padding: 11px 2px; border-bottom: 1px solid var(--line); }
+.row:hover { background: var(--surface); }
+.row.is-selected { background: var(--accent-soft); }
+
+/* quiet per-row rename affordance: appears on hover, coral on hover-of-itself */
+.row-rename { border: none; background: transparent; color: var(--ink-3); cursor: pointer;
+  display: inline-flex; padding: 4px; border-radius: 7px; opacity: 0; transition: opacity .12s, color .12s, background .12s; }
+.row:hover .row-rename { opacity: .8; }
+.row-rename:hover { opacity: 1; color: var(--accent); background: var(--surface-2); }
+.row-rename .ico { font-size: 15px; }
+.row-rename[disabled] { display: none; }
+.row-check { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+.row-check[disabled] { visibility: hidden; }
+.sport-ico { color: var(--ink-3); display: inline-flex; }
+.sport-ico .ico { font-size: 20px; }
+/* identity cell: the sport icon + (for routes) the little GPS-shape glyph */
+.ident { display: inline-flex; align-items: center; gap: 9px; }
+.route-slot { width: 44px; height: 28px; display: inline-flex; align-items: center;
+  justify-content: center; color: var(--ink-3); }
+.row:hover .route-slot { color: var(--accent); cursor: zoom-in; }
+.route-trace { width: 44px; height: 28px; display: block; overflow: visible; }
+.route-line { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round;
+  stroke-linecap: round; vector-effect: non-scaling-stroke; opacity: .9; }
+.route-start { fill: var(--accent-2); stroke: none; }
+
+/* hover-to-enlarge: a floating instrument card (map + metrics + elevation) */
+.route-preview { position: fixed; z-index: 70; pointer-events: none; width: 288px;
+  background: var(--surface); border: 1px solid var(--line-2); border-radius: var(--r);
+  box-shadow: var(--shadow); padding: 12px; opacity: 0; transform: scale(.97);
+  transition: opacity .12s ease, transform .12s ease; }
+.route-preview.show { opacity: 1; transform: scale(1); }
+.route-trace-big { display: block; width: 264px; height: 168px; color: var(--accent); overflow: visible; }
+.route-trace-big .route-line { stroke-width: 2; opacity: 1; }
+.route-trace-big .route-start { r: .95; }
+.route-arrow { fill: var(--accent); stroke: none; opacity: .9; }
+.route-km-dot { fill: var(--surface); stroke: var(--accent); stroke-width: .6; vector-effect: non-scaling-stroke; }
+/* the halo (surface-coloured stroke under the fill) keeps km numbers legible over the line */
+.route-km-label { font-family: var(--mono); fill: var(--ink); text-anchor: middle;
+  paint-order: stroke; stroke: var(--surface); stroke-width: .9px; stroke-linejoin: round; }
+.route-preview-name { font-family: var(--serif); font-size: 14.5px; color: var(--ink); margin-top: 9px;
+  max-width: 264px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.route-prof { width: 264px; height: 30px; display: block; margin-top: 10px; }
+.route-prof-area { fill: var(--accent-soft); stroke: none; opacity: .55; }
+.route-prof-line { fill: none; stroke: var(--accent); stroke-width: 1.4; stroke-linejoin: round;
+  stroke-linecap: round; vector-effect: non-scaling-stroke; }
+/* wind detail in the hover preview: speed + where it blows from, then the verdict
+   sentence; Klein only when the wind is a tailwind for the ride home */
+.route-wind-line { display: flex; align-items: flex-start; gap: 8px; margin-top: 11px; padding-top: 10px;
+  border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11.5px; }
+.route-wind-line .ico { font-size: 15px; color: var(--ink-3); flex: none; margin-top: 1px; }
+.wind-detail { color: var(--ink-2); letter-spacing: .02em; }
+.wind-verdict { color: var(--ink-3); margin-top: 3px; }
+.route-wind-line.wind-tail .ico, .route-wind-line.wind-tail .wind-verdict { color: var(--accent-2-text); }
+.row-main { min-width: 0; }
+.row-name { font-family: var(--serif); font-size: 16.5px; font-weight: 600; letter-spacing: -.005em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-meta { font-family: var(--mono); font-size: 11px; letter-spacing: .03em; color: var(--ink-3);
+  margin-top: 2px; text-transform: lowercase; }
+/* route data line: distance, ascent, descent, and the direction flag, shown in the
+   list itself so the numbers are readable at a glance (no hover needed) */
+.row-metrics { display: flex; align-items: center; color: var(--ink-2); text-transform: none;
+  white-space: nowrap; overflow: hidden; }
+.row-metrics > span { display: inline-flex; align-items: center; white-space: nowrap; }
+.row-metrics > span + span::before { content: "·"; margin: 0 7px; color: var(--ink-3); }
+.row-metrics .rm-clip { gap: 3px; }
+.row-metrics .ico { font-size: 11px; color: var(--ink-3); }
+.route-dir { gap: 4px; color: var(--ink); }
+.dir-glyph { color: var(--accent); font-weight: 700; }
+/* forecast wind verdict on the row: Klein reserved for the good case (tailwind home),
+   muted otherwise, so a glance tells you if the wind favours the ride back */
+.route-wind { gap: 4px; color: var(--ink-2); }
+.route-wind .ico { color: inherit; }
+.route-wind.wind-tail { color: var(--accent-2-text); background: var(--accent-2-soft); font-weight: 600;
+  border-radius: var(--r); padding: 2px 8px; margin-left: 9px; }
+/* the generated "·" separator would land INSIDE the pill background; the pill separates
+   itself, so it carries no dot (margin-left above keeps the rhythm) */
+.row-metrics > span + span.wind-tail::before { content: none; margin: 0; }
+/* forecast conditions line (row 2): weather glyph + temp, feels-like, wind strength,
+   verdict; the weather + temp read as the primary "how to dress" cue */
+/* the conditions line may run long (wind origin + degrees + the verdict pill); wrap as
+   whole items rather than clipping the pill, the most valuable thing on the line */
+.row-conditions { margin-top: 3px; flex-wrap: wrap; overflow: visible; white-space: normal; row-gap: 3px; }
+.row-conditions .cond-wx { gap: 4px; color: var(--ink); }
+.row-conditions .cond-wx .ico { font-size: 13px; color: var(--ink-2); }
+.row-conditions .cond-feels { color: var(--ink-3); }
+/* rain outlook: shown only when rain is likely, so it reads as a real heads-up */
+.row-conditions .cond-rain { gap: 4px; color: var(--ink-2); }
+.row-conditions .cond-rain .ico { font-size: 12px; color: var(--ink-2); }
+
+/* the two badges: monochrome, encoded by fill + icon; hover keeps contrast (always readable) */
+.badges { display: inline-flex; gap: 8px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line-2);
+  background: var(--surface); border-radius: var(--r); padding: 6px 10px; font-family: var(--mono);
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3);
+  cursor: pointer; white-space: nowrap; transition: border-color .12s, background .12s, color .12s, transform .06s; }
+.badge .ico { font-size: 14px; }
+.badge.off:hover:not([disabled]), .badge.unknown:hover:not([disabled]) {
+  border-color: var(--ink-2); color: var(--ink); background: var(--surface-2); }
+.badge.on { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.badge.on:hover:not([disabled]) { background: var(--accent-pop); border-color: var(--accent-pop); color: #4a1114; }
+.badge:active:not([disabled]) { transform: scale(.95); }
+.badge[disabled] { cursor: default; opacity: .5; }
+.badge.unknown { border-style: dashed; opacity: .6; }
+
+.locchip { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); min-width: 100px; text-align: right; }
+.locchip.is-synced { color: var(--accent); }
+.locchip.is-stale { color: var(--danger-text); }
+
+/* saved points ("Places"): name + coordinates, rename + delete. Own grid (no checkbox,
+   no Connect/Watch badges, no loc chip); the pin sits in the same 74px identity column so it
+   lines up under the sport icons and route glyphs above. */
+.place-row { grid-template-columns: 20px 74px 1fr auto; }
+.place-row .sport-ico .ico { font-size: 19px; }
+.row.place-row:hover .sport-ico { color: var(--accent); }
+.place-coords { text-transform: none; letter-spacing: .02em; color: var(--ink-3); }
+.place-actions { display: inline-flex; align-items: center; gap: 2px; }
+.row-del { border: none; background: transparent; color: var(--ink-3); cursor: pointer;
+  display: inline-flex; padding: 4px; border-radius: 7px; opacity: 0; transition: opacity .12s, color .12s, background .12s; }
+.row:hover .row-del { opacity: .8; }
+.row-del:hover { opacity: 1; color: var(--danger); background: var(--danger-soft); }
+.row-del .ico { font-size: 15px; }
+
+/* skeleton */
+.sk-row { display: grid; grid-template-columns: 28px 1fr 120px; align-items: center; gap: 15px;
+  padding: 13px 2px; border-bottom: 1px solid var(--line); }
+.sk { background: linear-gradient(90deg, var(--surface-2) 25%, var(--line) 37%, var(--surface-2) 63%);
+  background-size: 400% 100%; animation: shimmer 1.5s ease infinite; border-radius: 4px; }
+.sk-ico { width: 24px; height: 24px; }
+.sk-line { height: 13px; } .sk-chip { height: 15px; }
+@keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+
+/* empty state with a Visualize-Value line illustration */
+.empty { display: flex; flex-direction: column; align-items: center; gap: 17px; text-align: center;
+  padding: 72px 20px; color: var(--ink-3); }
+.empty .illo { width: 140px; height: 100px; color: var(--ink-3); }
+.empty .illo .node { fill: var(--accent-pop); stroke: none; }
+.empty .illo .node-h1 { fill: var(--accent-pop); stroke: none; opacity: .13; }
+.empty .illo .node-h2 { fill: var(--accent-pop); stroke: none; opacity: .26; }
+.empty-title { font-family: var(--serif); font-size: 21px; font-weight: 600; color: var(--ink); font-style: italic; }
+.empty-sub { font-family: var(--mono); font-size: 12.5px; max-width: 330px; line-height: 1.6; }
+
+/* dinkus divider (Stafforini ornament) */
+.dinkus { display: flex; justify-content: center; padding: 28px 0 8px; color: var(--line-2); }
+.dinkus svg { width: 50px; height: 12px; }
+.dinkus .node { fill: var(--accent-pop); stroke: none; }
+
+/* ---------- status line ---------- */
+.statusline { border-top: 1px solid var(--line); background: var(--surface); }
+.statusline .wrap { display: flex; align-items: center; padding-top: 9px; padding-bottom: 9px;
+  font-family: var(--mono); font-size: 11px; letter-spacing: .03em; color: var(--ink-3); }
+
+/* ---------- modal ---------- */
+.modal { position: fixed; inset: 0; background: rgba(8,11,13,.4); display: flex;
+  align-items: center; justify-content: center; z-index: 50; animation: fade .14s ease; }
+.modal-card { width: min(470px, 92vw); background: var(--surface); border: 1px solid var(--line-2);
+  border-radius: var(--r); box-shadow: var(--shadow); padding: 26px; animation: pop .16s cubic-bezier(.2,.8,.3,1); }
+.modal-title { font-family: var(--serif); font-size: 22px; font-weight: 600; letter-spacing: -.01em; }
+.modal-lead { font-family: var(--mono); font-size: 12px; color: var(--ink-2); margin: 5px 0 15px; letter-spacing: .02em; }
+.modal-list { margin: 0; padding: 0; list-style: none; max-height: 42vh; overflow-y: auto; }
+.modal-list li { padding: 11px 0; border-top: 1px solid var(--line); }
+.modal-list li:last-child { border-bottom: 1px solid var(--line); }
+.modal-list .nm { font-family: var(--serif); font-size: 16px; font-weight: 600; }
+.modal-list .eff { display: block; font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+/* rename modal: a single text input + a live propagation note */
+.modal-list li.rename-li { border: none; padding: 4px 0 2px; }
+.rename-input { width: 100%; box-sizing: border-box; font-family: var(--serif); font-size: 17px;
+  color: var(--ink); background: var(--bg); border: 1px solid var(--line-2); border-radius: var(--r);
+  padding: 11px 13px; }
+.rename-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.rename-note { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); margin-top: 9px; min-height: 16px; letter-spacing: .02em; }
+.rename-note.warn { color: var(--danger-text); }
+.modal-warn { margin-top: 15px; padding: 12px 14px; border-radius: var(--r); font-size: 13.5px;
+  display: flex; gap: 9px; align-items: flex-start; line-height: 1.45; }
+.modal-warn .ico { font-size: 16px; flex: none; margin-top: 2px; }
+.modal-warn.reversible { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+/* permanent warn: red-tinted danger callout, but the body text stays high-contrast ink so the
+   "no undo" message is fully legible; the danger reads from the red frame + red alert icon. */
+.modal-warn.permanent { background: var(--danger-soft); color: var(--ink); border: 1px solid var(--danger-line); }
+.modal-warn.permanent .ico { color: var(--danger-text); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+/* ---------- toast + scan ---------- */
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--ink);
+  color: var(--surface); padding: 11px 17px; border-radius: var(--r); font-family: var(--mono); font-size: 12.5px;
+  box-shadow: var(--shadow); z-index: 60; max-width: 80vw; animation: slideup .2s ease; }
+.toast.err { background: var(--danger); color: #fff; }
+.scan { position: fixed; inset: 0; background: rgba(255,255,255,.84); z-index: 70; display: flex;
+  flex-direction: column; align-items: center; justify-content: center; gap: 16px; backdrop-filter: blur(2px); }
+#scan-text { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); letter-spacing: .03em; }
+.spinner { width: 28px; height: 28px; border: 2.5px solid var(--line-2); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .8s linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes pop { from { opacity: 0; transform: translateY(7px) scale(.985); } }
+@keyframes slideup { from { opacity: 0; transform: translate(-50%, 8px); } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1a1a1a; --surface: #212121; --surface-2: #262626; --ink: #d4d4d4; --ink-2: #999999;
+    --ink-3: #868686; --line: #333333; --line-2: #3d3d3d; --accent: #fd4e5a; --accent-pop: #fd4e5a;
+    --accent-soft: rgba(253,78,90,.16); --accent-2: #5a5cf5; --accent-2-soft: rgba(90,92,245,.20);
+    --accent-2-text: #8b8dff;
+    --danger: #d9434e; --danger-soft: rgba(217,67,78,.16);
+    --danger-line: rgba(217,67,78,.35); --danger-hover: #c62230; --danger-text: #e5636c;
+    --shadow: 0 1px 1px rgba(0,0,0,.5), 0 16px 44px rgba(0,0,0,.6);
+  }
+  .btn-primary { background: var(--ink); border-color: var(--ink); color: #1a1a1a; }
+  .btn-primary:hover { background: #eaeaea; border-color: #eaeaea; }
+  /* "on" badge: a filled pill reads as "present". On the dark base a full #d4d4d4 fill
+     glares brighter than the coral accent, so calm it to a mid grey that still fills clearly. */
+  .badge.on { background: #9e9e9e; border-color: #9e9e9e; color: #1a1a1a; }
+  .badge.on:hover:not([disabled]) { background: var(--accent-pop); border-color: var(--accent-pop); color: #40161a; }
+  .scan { background: rgba(26,26,26,.84); }
+}
