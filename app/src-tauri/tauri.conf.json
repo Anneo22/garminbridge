@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "GarminBridge",
+  "productName": "Garmin Bridge",
   "version": "0.1.0",
   "identifier": "com.anneo22.garminbridge",
   "build": {
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "GarminBridge · Content Manager",
+        "title": "Garmin Bridge",
         "width": 1080,
         "height": 760,
         "minWidth": 720,

@@ -1,4 +1,15 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- the node halo: one continuous coral glow, no ring steps (Direction A1) -->
+    <radialGradient id="nodeGlow">
+      <stop offset="0" stop-color="#FD4E5A" stop-opacity="1"/>
+      <stop offset="0.40" stop-color="#FD4E5A" stop-opacity="1"/>
+      <stop offset="0.52" stop-color="#FD4E5A" stop-opacity="0.52"/>
+      <stop offset="0.66" stop-color="#FD4E5A" stop-opacity="0.26"/>
+      <stop offset="0.82" stop-color="#FD4E5A" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#FD4E5A" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
   <!-- Stafforini charcoal squircle -->
   <rect x="64" y="64" width="896" height="896" rx="224" fill="#1a1a1a"/>
   <rect x="65" y="65" width="894" height="894" rx="223" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
@@ -7,8 +18,7 @@
   <path d="M192 800 C192 384 320 256 512 256 C704 256 832 384 832 800"
         fill="none" stroke="#e6e6e6" stroke-width="70" stroke-linecap="round"/>
 
-  <!-- the crossing node: hot coral, softly faded -->
-  <circle cx="512" cy="256" r="210" fill="#FD4E5A" opacity="0.13"/>
-  <circle cx="512" cy="256" r="150" fill="#FD4E5A" opacity="0.26"/>
+  <!-- the crossing node: a solid hot-coral dot in a smooth continuous glow -->
+  <circle cx="512" cy="256" r="210" fill="url(#nodeGlow)"/>
   <circle cx="512" cy="256" r="90" fill="#FD4E5A"/>
 </svg>

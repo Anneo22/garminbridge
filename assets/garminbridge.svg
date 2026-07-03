@@ -1,36 +1,25 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1c2024"/>
-      <stop offset="1" stop-color="#0b0d0f"/>
-    </linearGradient>
-    <linearGradient id="span" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#EAF0F2"/>
-      <stop offset="1" stop-color="#C7D0D4"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#3FE0CB" stop-opacity="0.9"/>
-      <stop offset="1" stop-color="#3FE0CB" stop-opacity="0"/>
+    <!-- the node halo: one continuous coral glow, no ring steps (Direction A1) -->
+    <radialGradient id="nodeGlow">
+      <stop offset="0" stop-color="#FD4E5A" stop-opacity="1"/>
+      <stop offset="0.40" stop-color="#FD4E5A" stop-opacity="1"/>
+      <stop offset="0.52" stop-color="#FD4E5A" stop-opacity="0.52"/>
+      <stop offset="0.66" stop-color="#FD4E5A" stop-opacity="0.26"/>
+      <stop offset="0.82" stop-color="#FD4E5A" stop-opacity="0.09"/>
+      <stop offset="1" stop-color="#FD4E5A" stop-opacity="0"/>
     </radialGradient>
   </defs>
 
-  <!-- dark squircle backplate (matches the landing page's permanent-dark, minimal style) -->
-  <rect x="64" y="64" width="896" height="896" rx="224" fill="url(#bg)"/>
-  <rect x="64.5" y="64.5" width="895" height="895" rx="223.5" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
+  <!-- Stafforini charcoal squircle -->
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="#1a1a1a"/>
+  <rect x="65" y="65" width="894" height="894" rx="223" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
 
-  <!-- the two shores being bridged: watch (left) and Mac (right), as understated anchors -->
-  <g stroke="#7E8A90" stroke-width="20" fill="none" stroke-opacity="0.55">
-    <circle cx="300" cy="742" r="40"/>                 <!-- watch -->
-    <rect x="688" y="704" width="76" height="58" rx="12"/> <!-- Mac -->
-  </g>
-  <!-- shoreline -->
-  <line x1="232" y1="784" x2="792" y2="784" stroke="#ffffff" stroke-opacity="0.16" stroke-width="16" stroke-linecap="round"/>
+  <!-- the bridge arch, one clean neutral span -->
+  <path d="M192 800 C192 384 320 256 512 256 C704 256 832 384 832 800"
+        fill="none" stroke="#e6e6e6" stroke-width="70" stroke-linecap="round"/>
 
-  <!-- the bridge: one clean span from watch to Mac -->
-  <path d="M300 742 C300 392 392 296 512 296 C632 296 724 392 724 742"
-        fill="none" stroke="url(#span)" stroke-width="76" stroke-linecap="round"/>
-
-  <!-- data crossing the bridge (the one accent; teal, deliberately NOT Garmin blue) -->
-  <circle cx="512" cy="296" r="120" fill="url(#glow)"/>
-  <circle cx="512" cy="296" r="50" fill="#3FE0CB"/>
+  <!-- the crossing node: a solid hot-coral dot in a smooth continuous glow -->
+  <circle cx="512" cy="256" r="210" fill="url(#nodeGlow)"/>
+  <circle cx="512" cy="256" r="90" fill="#FD4E5A"/>
 </svg>

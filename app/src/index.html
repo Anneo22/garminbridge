@@ -13,10 +13,19 @@
         <div class="brand">
           <!-- GarminBridge mark: a clean bridge arch with the hot-coral crossing node, softly faded. -->
           <svg class="logomark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <defs>
+              <radialGradient id="nodeGlow">
+                <stop offset="0" stop-color="#FD4E5A" stop-opacity="1" />
+                <stop offset="0.40" stop-color="#FD4E5A" stop-opacity="1" />
+                <stop offset="0.52" stop-color="#FD4E5A" stop-opacity="0.52" />
+                <stop offset="0.66" stop-color="#FD4E5A" stop-opacity="0.26" />
+                <stop offset="0.82" stop-color="#FD4E5A" stop-opacity="0.09" />
+                <stop offset="1" stop-color="#FD4E5A" stop-opacity="0" />
+              </radialGradient>
+            </defs>
             <path d="M6 25 C6 12 10 8 16 8 C22 8 26 12 26 25" fill="none" stroke="currentColor"
                   stroke-width="2.1" stroke-linecap="round" />
-            <circle class="node-h1" cx="16" cy="8" r="6.6" />
-            <circle class="node-h2" cx="16" cy="8" r="4.7" />
+            <circle class="node-glow" cx="16" cy="8" r="6.6" fill="url(#nodeGlow)" />
             <circle class="node" cx="16" cy="8" r="2.9" />
           </svg>
           <div>
@@ -29,6 +38,9 @@
             <span class="ico" data-icon="device-watch"></span>
             <span class="wp-dot"></span><span id="watch-pill-text">Checking</span>
           </div>
+          <button id="new-workout-btn" class="btn btn-primary" title="Create a workout and push it to your watch">
+            <span class="ico" data-icon="barbell"></span><span>New workout</span>
+          </button>
           <button id="refresh-btn" class="btn btn-ghost" title="Re-scan the watch over USB (live)">
             <span class="ico ico-spin" data-icon="refresh"></span><span>Refresh</span>
           </button>
@@ -78,6 +90,35 @@
             <option value="in2d">In 2 days</option>
           </select>
         </div>
+      </div>
+    </section>
+
+    <!-- Route controls: sort + filter-by-start-place. Shown only when routes are in view. -->
+    <section id="route-toolbar" class="toolbar toolbar-routes" hidden>
+      <div class="wrap">
+        <label class="route-ctl">
+          <span class="route-ctl-label">Sort routes</span>
+          <select id="route-sort" class="sport-select">
+            <option value="name">Name A–Z</option>
+            <option value="dist_asc">Distance: short → long</option>
+            <option value="dist_desc">Distance: long → short</option>
+            <option value="recent">Recently added</option>
+            <option value="nearest">Nearest start</option>
+          </select>
+        </label>
+        <div class="anchor-wrap">
+          <button id="anchor-btn" class="btn btn-ghost" title="Show only routes that start near a place">
+            <span class="ico" data-icon="map-pin"></span><span id="anchor-btn-text">Start place</span>
+          </button>
+          <span id="anchor-chip" class="anchor-chip" hidden></span>
+          <!-- Anchor picker popover, built + toggled by main.js -->
+          <div id="anchor-pop" class="anchor-pop" hidden></div>
+        </div>
+        <div class="spacer"></div>
+        <button id="add-route-btn" class="btn btn-outline" title="Import a GPX or FIT route and add it to your watch">
+          <span class="ico" data-icon="plus"></span><span>Add route</span>
+        </button>
+        <input type="file" id="route-file" accept=".gpx,.fit" hidden />
       </div>
     </section>
 
