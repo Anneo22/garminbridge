@@ -2,6 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Resolve the saved appearance before the stylesheet applies, so there is no flash of the
+         wrong theme. "system" (the default) follows the OS; light/dark force it. -->
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem("gb-theme") || "system";
+          var dark = p === "dark" || (p === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+        } catch (e) { document.documentElement.setAttribute("data-theme", "light"); }
+      })();
+    </script>
     <link rel="stylesheet" href="styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GarminBridge Content Manager</title>
@@ -34,6 +45,14 @@
           </div>
         </div>
         <div class="topbar-right">
+          <div class="theme-wrap" title="Appearance">
+            <span id="theme-icon" class="ico" data-icon="theme-auto"></span>
+            <select id="theme-select" class="sport-select theme-select" aria-label="Appearance">
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
           <div id="watch-pill" class="watch-pill" title="Where the watch data comes from">
             <span class="ico" data-icon="device-watch"></span>
             <span class="wp-dot"></span><span id="watch-pill-text">Checking</span>

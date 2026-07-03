@@ -1173,8 +1173,36 @@ function segActive(groupId, btn) {
   }
 }
 
+// ---- appearance: light / dark / system (persisted in localStorage) ----------------------------
+function resolvedTheme(pref) {
+  const dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  return dark ? "dark" : "light";
+}
+// The masthead icon mirrors the CHOSEN mode: sun = light, moon = dark, split circle = system.
+function iconForPref(pref) { return pref === "light" ? "sun" : pref === "dark" ? "moon" : "theme-auto"; }
+function applyThemePref(pref) {
+  try { localStorage.setItem("gb-theme", pref); } catch (e) { /* private mode: run for this session only */ }
+  document.documentElement.setAttribute("data-theme", resolvedTheme(pref));
+  const ic = $("theme-icon"); if (ic) setIcon(ic, iconForPref(pref));
+}
+function initTheme() {
+  let pref = "system";
+  try { pref = localStorage.getItem("gb-theme") || "system"; } catch (e) { /* ignore */ }
+  const sel = $("theme-select");
+  if (sel) { sel.value = pref; sel.addEventListener("change", (e) => applyThemePref(e.target.value)); }
+  applyThemePref(pref);
+  // keep following the OS while the preference is "system"
+  try {
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      let p = "system"; try { p = localStorage.getItem("gb-theme") || "system"; } catch (e) { /* ignore */ }
+      if (p === "system") document.documentElement.setAttribute("data-theme", resolvedTheme("system"));
+    });
+  } catch (e) { /* older webview: no live OS-change updates */ }
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-icon]").forEach((e) => setIcon(e, e.dataset.icon));
+  initTheme();
   $("refresh-btn").addEventListener("click", () => load(true));
   $("new-workout-btn").addEventListener("click", openAuthor);
   $("search").addEventListener("input", (e) => { state.filters.search = e.target.value; render(); });
@@ -1267,18 +1295,93 @@ function openAuthor() {
   AUTHOR.spec = null; AUTHOR.valid = false; AUTHOR.image = null;
   $("author-text").value = "";
   $("author-date").value = todayStr();
+  renderDateBtn();
+  const dpop = $("author-date-pop"); if (dpop) dpop.hidden = true;
   renderImageChip();
   renderForm();
   clearPreview();
   loadAuthorSettings();
   switchTab("describe");
   $("author-overlay").hidden = false;
+  // replay the entrance each open (re-adding a class only animates after a reflow)
+  const card = $("author-overlay").firstElementChild;
+  if (card) { card.classList.remove("is-in"); void card.offsetWidth; card.classList.add("is-in"); }
 }
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function closeAuthor() { $("author-overlay").hidden = true; }
+
+// ---- schedule date: a compact custom calendar (native picker is dated + light-in-dark) --------
+// A hidden #author-date input keeps holding the YYYY-MM-DD value the engine reads; the button +
+// popover just drive it, so the push path is unchanged.
+const DP_MONTHS = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+const DP_WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+let _dpMonth = null; // {y, m} currently shown in the popover
+
+function scheduleControl() {
+  const hidden = el("input", { type: "hidden", id: "author-date" });
+  const btn = el("button", { id: "author-date-btn", class: "author-date-btn", type: "button",
+    onclick: toggleDatePop }, "Today");
+  const pop = el("div", { id: "author-date-pop", class: "date-pop", hidden: true });
+  return el("div", { class: "author-date-wrap",
+      title: "Scheduling it makes it sync to your watch automatically, no manual Send to device" }, [
+    el("span", { class: "author-date-label", text: "Schedule for:" }),
+    el("div", { class: "author-date-field" }, [btn, hidden, pop]),
+  ]);
+}
+function dpParse(s) { const p = (s || "").split("-").map(Number); return (p[0] && p[1] && p[2]) ? { y: p[0], m: p[1] - 1, d: p[2] } : null; }
+function dpISO(y, m, d) { return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`; }
+function dpHuman(s) {
+  const p = dpParse(s); if (!p) return "Pick a date";
+  const t = dpParse(todayStr());
+  if (p.y === t.y && p.m === t.m && p.d === t.d) return "Today";
+  const tm = new Date(t.y, t.m, t.d + 1);
+  if (p.y === tm.getFullYear() && p.m === tm.getMonth() && p.d === tm.getDate()) return "Tomorrow";
+  return new Date(p.y, p.m, p.d).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+function renderDateBtn() { const b = $("author-date-btn"); if (b) b.textContent = dpHuman($("author-date").value); }
+function toggleDatePop(e) {
+  if (e) e.stopPropagation();
+  const pop = $("author-date-pop");
+  if (pop.hidden) {
+    const c = dpParse($("author-date").value) || dpParse(todayStr());
+    _dpMonth = { y: c.y, m: c.m }; renderDatePop(); pop.hidden = false;
+  } else pop.hidden = true;
+}
+function shiftMonth(delta) {
+  let { y, m } = _dpMonth; m += delta;
+  if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; }
+  _dpMonth = { y, m }; renderDatePop();
+}
+function pickDate(iso) { $("author-date").value = iso; renderDateBtn(); $("author-date-pop").hidden = true; }
+function renderDatePop() {
+  const pop = $("author-date-pop"); if (!pop) return;
+  const { y, m } = _dpMonth, today = dpParse(todayStr()), sel = dpParse($("author-date").value);
+  const first = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
+  const head = el("div", { class: "date-pop-head" }, [
+    el("button", { class: "date-nav", type: "button", title: "Previous month",
+      onclick: (e) => { e.stopPropagation(); shiftMonth(-1); } }, "‹"),
+    el("div", { class: "date-pop-title", text: `${DP_MONTHS[m]} ${y}` }),
+    el("button", { class: "date-nav", type: "button", title: "Next month",
+      onclick: (e) => { e.stopPropagation(); shiftMonth(1); } }, "›"),
+  ]);
+  const week = el("div", { class: "date-pop-week" }, DP_WEEKDAYS.map((d) => el("span", { text: d })));
+  const grid = el("div", { class: "date-pop-grid" });
+  for (let i = 0; i < first; i++) grid.append(el("span", { class: "date-cell is-blank" }));
+  for (let d = 1; d <= days; d++) {
+    const iso = dpISO(y, m, d);
+    const isToday = today.y === y && today.m === m && today.d === d;
+    const isSel = sel && sel.y === y && sel.m === m && sel.d === d;
+    const past = new Date(y, m, d) < new Date(today.y, today.m, today.d);
+    const cls = "date-cell" + (isToday ? " is-today" : "") + (isSel ? " is-selected" : "") + (past ? " is-past" : "");
+    grid.append(el("button", { class: cls, type: "button", disabled: past,
+      onclick: (e) => { e.stopPropagation(); pickDate(iso); } }, String(d)));
+  }
+  pop.replaceChildren(head, week, grid);
+}
 
 function switchTab(name) {
   AUTHOR.tab = name;
@@ -1289,6 +1392,9 @@ function switchTab(name) {
   // when switching to Build, preview the current form
   if (name === "build") syncAndPreview();
   else clearPreview();
+  // Reset the status line so a stale "Ready — review and push" from a previous build never
+  // greets a fresh, unbuilt pane. A ready/review status is set only after a build succeeds.
+  $("author-status").textContent = name === "describe" ? "Describe a workout to get started." : "";
 }
 
 // ---- overlay construction (once) ----------------------------------------------
@@ -1314,10 +1420,7 @@ function buildAuthorUI() {
     el("div", { id: "author-summary", class: "author-cards" }),
     el("div", { class: "author-foot-actions" }, [
       el("div", { id: "author-status", class: "author-status" }),
-      el("label", { class: "author-date-wrap", title: "Scheduling it makes it sync to your watch automatically — no manual Send to device" }, [
-        el("span", { text: "On watch for" }),
-        el("input", { type: "date", id: "author-date", class: "author-input author-date" }),
-      ]),
+      scheduleControl(),
       el("button", { id: "author-push", class: "btn btn-primary", disabled: true,
         onclick: pushSpec }, "Push to watch"),
     ]),
@@ -1327,35 +1430,43 @@ function buildAuthorUI() {
   const overlay = el("div", { id: "author-overlay", class: "author-overlay", hidden: true,
     onclick: (e) => { if (e.target.id === "author-overlay") closeAuthor(); } }, [card]);
   document.body.appendChild(overlay);
+  // Close the date popover on any click outside its field.
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".author-date-field")) {
+      const p = $("author-date-pop"); if (p && !p.hidden) p.hidden = true;
+    }
+  });
   AUTHOR.built = true;
 }
 
 function buildDescribePane() {
-  const info = el("div", { class: "author-info" }, [
-    el("div", { text: "Describe a workout in words or snap a photo of a plan, and it builds it on your watch." }),
-    el("div", { text: "You can sign in with ChatGPT, or paste an API key for Anthropic, OpenAI, or Gemini." }),
-    el("div", { text: "Sign-in uses your own ChatGPT account. It's an unofficial path and can stop working if OpenAI changes it, in which case it uses your API key instead." }),
+  // A quiet one-line intro in the home page's serif voice. No filled callout.
+  const intro = el("div", { class: "author-intro" }, [
+    el("p", { class: "author-lede",
+      text: "Describe a workout, or snap a photo of a plan. It gets built on your watch." }),
   ]);
 
-  const ta = el("textarea", { id: "author-text", class: "author-text", rows: "5",
-    placeholder: "Describe your workout in plain English, e.g. “10 min easy, then 4x(3 min hard / 2 min jog), 10 min easy”. Or attach a photo of a training plan below." });
+  const ta = el("textarea", { id: "author-text", class: "author-text", rows: "5", oninput: updateLLMBtn,
+    placeholder: "e.g. 10 min easy, then 4x(3 min hard / 2 min jog), 10 min easy. Or attach a photo of a training plan." });
 
   const fileInput = el("input", { type: "file", accept: "image/*", id: "author-file",
     style: "display:none", onchange: onImagePicked });
   const imageRow = el("div", { class: "author-image-row" }, [
     el("button", { class: "btn btn-ghost", onclick: () => $("author-file").click() },
-      [icon("map-pin"), el("span", { text: "Attach plan photo" })]),
+      [icon("photo"), el("span", { text: "Attach a photo" })]),
     el("span", { id: "author-image-chip", class: "author-chip", hidden: true }),
     fileInput,
   ]);
 
-  const settings = buildSettingsBlock();
+  // The connect-your-AI step: the one-click ChatGPT sign-in is the recommended primary,
+  // the API-key path (any provider) is a quiet reveal below it.
+  const connect = el("div", { class: "author-connect" }, [buildOauthBlock(), buildSettingsBlock()]);
 
   const buildBtn = el("button", { id: "author-llm-btn", class: "btn btn-primary author-build-btn",
-    onclick: buildFromLLM }, "Build with my model");
+    disabled: true, onclick: buildFromLLM }, "Build workout");
 
   return el("div", { id: "author-describe", class: "author-pane" },
-    [info, ta, imageRow, settings, buildBtn]);
+    [intro, ta, imageRow, connect, buildBtn]);
 }
 
 function buildSettingsBlock() {
@@ -1371,43 +1482,51 @@ function buildSettingsBlock() {
     placeholder: "custom model id", hidden: true });
   const modelField = el("div", { class: "author-model-field" }, [model, customModel]);
   const key = el("input", { id: "author-key", class: "author-input", type: "password",
-    placeholder: "API key for selected provider" });
+    placeholder: "Paste an API key" });
   const save = el("button", { class: "btn btn-ghost", onclick: saveAuthorSettings }, "Save");
   const status = el("span", { id: "author-key-status", class: "author-status" });
 
   const details = el("details", { class: "author-settings" }, [
-    el("summary", {}, "Model settings"),
+    el("summary", {}, "Use an API key instead"),
     el("div", { class: "author-settings-grid" }, [
       el("label", {}, "Provider"), provider,
       el("label", {}, "Model"), modelField,
       el("label", {}, "API key"), key,
       el("div", {}), el("div", { class: "author-settings-actions" }, [save, status]),
     ]),
-    buildOauthBlock(),
   ]);
   return details;
 }
 
-// The "Sign in with ChatGPT" block. Only visible when the provider is OpenAI. It sits ALONGSIDE
-// the API-key field: the key path is always the fallback if the subscription sign-in stops working.
+// The recommended one-click path: "Sign in with ChatGPT" uses the user's own ChatGPT account.
+// It is the primary connect option (always shown); the API-key reveal below is the alternative.
 function buildOauthBlock() {
   const signIn = el("button", { id: "author-oauth-signin", class: "btn btn-primary",
     onclick: oauthSignIn }, "Sign in with ChatGPT");
   const signOut = el("button", { id: "author-oauth-signout", class: "btn btn-ghost",
     onclick: oauthSignOut, hidden: true }, "Sign out");
   const status = el("span", { id: "author-oauth-status", class: "author-status" });
-  return el("div", { id: "author-oauth", class: "author-oauth", hidden: true }, [
-    el("div", { class: "author-oauth-row" }, [signIn, signOut, status]),
+  const note = el("p", { id: "author-oauth-note", class: "author-note",
+    text: "Uses your own ChatGPT account. This sign-in is unofficial and could stop working if OpenAI changes it." });
+  // Order [signIn, status, signOut]: not-connected reads "Sign in with ChatGPT | No API key needed";
+  // connected hides signIn so it reads "Signed in to ChatGPT ✓ | Sign out".
+  return el("div", { id: "author-oauth", class: "author-oauth" }, [
+    el("div", { class: "author-oauth-row" }, [signIn, status, signOut]),
+    note,
   ]);
 }
 
 function buildFormPane() {
+  // A serif lede for parity with the Describe pane, so this tab isn't a bare form.
+  const intro = el("div", { class: "author-intro" }, [
+    el("p", { class: "author-lede", text: "Build a workout step by step, then push it to your watch." }),
+  ]);
   const name = el("input", { id: "author-name", class: "author-input", placeholder: "Workout name",
     oninput: (e) => { AUTHOR.form.name = e.target.value; syncAndPreview(); } });
   const sport = el("select", { id: "author-sport", class: "sport-select",
     onchange: (e) => { AUTHOR.form.sport = e.target.value; syncAndPreview(); } },
     ["strength", "running", "cycling", "swimming"].map((s) =>
-      el("option", { value: s }, s)));
+      el("option", { value: s }, s[0].toUpperCase() + s.slice(1))));
 
   const steps = el("div", { id: "author-steps", class: "author-steps" });
   const addMenu = el("div", { class: "author-addrow" },
@@ -1417,6 +1536,7 @@ function buildFormPane() {
         t.label))));
 
   return el("div", { id: "author-build", class: "author-pane", hidden: true }, [
+    intro,
     el("div", { class: "author-form-head" }, [name, sport]),
     steps, addMenu,
   ]);
@@ -1431,6 +1551,9 @@ function renderForm() {
   host.replaceChildren(...AUTHOR.form.steps.map((s, i) => renderStep(s, AUTHOR.form.steps, i)));
 }
 
+// colour the form step cards by type, matching the preview cards' left-border language
+const STEP_COLOR = { warmup: "wo-warmup", interval: "wo-work", rest: "wo-recover",
+  recovery: "wo-recover", strength: "wo-strength", cooldown: "wo-cooldown" };
 function renderStep(step, list, i) {
   const title = el("div", { class: "author-step-title" },
     [el("span", { text: (STEP_TYPES.find((t) => t.k === step.kind) || {}).label || step.kind })]);
@@ -1462,7 +1585,7 @@ function renderStep(step, list, i) {
     // warmup / cooldown / recovery
     body.append(numField("Seconds", step.seconds, (v) => (step.seconds = v)), targetField(step));
   }
-  return el("div", { class: "author-step" }, [head, body]);
+  return el("div", { class: "author-step " + (STEP_COLOR[step.kind] || "") }, [head, body]);
 }
 
 function numField(label, val, set) {
@@ -1714,6 +1837,13 @@ function renderImageChip() {
       el("button", { class: "author-chip-x", title: "Remove",
         onclick: () => { AUTHOR.image = null; $("author-file").value = ""; renderImageChip(); } }, "×"));
   } else chip.hidden = true;
+  updateLLMBtn();
+}
+
+// "Build workout" is only actionable once there is something to build from.
+function updateLLMBtn() {
+  const b = $("author-llm-btn");
+  if (b) b.disabled = !($("author-text").value.trim() || AUTHOR.image);
 }
 
 async function buildFromLLM() {
@@ -1735,10 +1865,10 @@ async function buildFromLLM() {
     AUTHOR.spec = d.spec; AUTHOR.valid = !(d.errors && d.errors.length);
     renderAuthorPreview(d.summary, d.warnings, d.errors);
     if (d.notes && d.notes.length) toast(d.notes.join(" "), false);  // e.g. OAuth->key fallback
-    $("author-status").textContent = AUTHOR.valid ? "Ready — review and push." : "The model's spec has errors.";
+    $("author-status").textContent = AUTHOR.valid ? "Ready to review and push." : "The model's spec has errors.";
   } catch (e) {
     toast(e.message, true); $("author-status").textContent = "";
-  } finally { btn.disabled = false; }
+  } finally { updateLLMBtn(); }
 }
 
 // ---- Describe: settings --------------------------------------------------------
@@ -1839,22 +1969,26 @@ async function loadAuthorSettings() {
   } catch (e) { /* settings are optional for the form path */ }
 }
 
-// Show the Sign-in-with-ChatGPT block only for OpenAI, and reflect connected/plan state.
+// The ChatGPT sign-in is the recommended primary path, so it is always shown (not provider-gated).
+// Reflect connected/plan state; otherwise nudge that it needs no key.
 function applyOauthUI(s) {
   const box = $("author-oauth");
   if (!box) return;
-  const isOpenai = (s.provider || $("author-provider").value) === "openai";
-  box.hidden = !isOpenai;
-  if (!isOpenai) return;
+  box.hidden = false;
   const connected = !!s.openai_oauth_connected;
   $("author-oauth-signin").hidden = connected;
   $("author-oauth-signout").hidden = !connected;
+  // The unofficial-path caveat informs the CHOICE; once connected it's just clutter, so hide it.
+  const note = $("author-oauth-note");
+  if (note) note.hidden = connected;
   const st = $("author-oauth-status");
+  // Blue = connected, echoing the app's Klein-blue "live" convention (watch pill, route data).
+  st.className = "author-status" + (connected ? " is-connected" : "");
   if (connected) {
     const plan = s.openai_oauth_plan ? ` (${s.openai_oauth_plan})` : "";
     st.textContent = `Signed in to ChatGPT${plan} ✓`;
   } else {
-    st.textContent = "Not signed in";
+    st.textContent = "No API key needed";
   }
 }
 
@@ -1901,20 +2035,26 @@ async function oauthSignIn() {
   const btn = $("author-oauth-signin");
   const st = $("author-oauth-status");
   btn.disabled = true;
-  st.textContent = "Opening browser — complete sign-in there…";
+  st.textContent = "Opening your browser, finish sign-in there…";
   try {
     // This call BLOCKS while the browser login runs (up to ~3 min), then returns fresh settings.
     const s = await engine(["workout-oauth-login"]);
-    const selectedProvider = $("author-provider").value;
-    AUTHOR.settings = { ...s, provider: selectedProvider };
-    applyOauthUI(AUTHOR.settings);
-    // Signing in switches OpenAI to the subscription path; persist that as the auth mode.
-    if (selectedProvider === "openai" && s.openai_oauth_connected) {
+    if (s.openai_oauth_connected) {
+      // Signing in with ChatGPT makes OpenAI (subscription) the active provider, so the build
+      // uses it regardless of what the advanced provider dropdown was set to.
       const s2 = await engine(["workout-settings-set", "--provider", "openai", "--openai-auth", "oauth"]);
-      AUTHOR.settings = s2; applyOauthUI(s2); renderModelOptionsFromSettings("openai", s2);
+      AUTHOR.settings = s2;
+      $("author-provider").value = "openai";
+      applyOauthUI(s2);
+      updateKeyStatus(s2, "openai");
+      renderModelOptionsFromSettings("openai", s2);
       refreshAuthorModelOptions("openai", s2);
+      toast("Signed in with ChatGPT.");
+    } else {
+      AUTHOR.settings = s;
+      applyOauthUI(s);
+      toast("Signed in with ChatGPT.");
     }
-    toast("Signed in with ChatGPT.");
   } catch (e) {
     toast(e.message, true);
     st.textContent = "Not signed in";

@@ -14,8 +14,13 @@ cd "$HERE"
 DEST="/Applications/Garmin Bridge.app"
 BUNDLE="$HERE/src-tauri/target/release/bundle/macos/Garmin Bridge.app"
 
-echo "==> Building release bundle (tauri build)…"
-npm run tauri build
+# Build ONLY the .app bundle, not the DMG. tauri build's final DMG step
+# (bundle_dmg.sh → hdiutil) is flaky and can fail even on a clean tree; under
+# `set -e` that failure would abort before the ditto below and silently skip the
+# install, even though the .app itself built fine. The local DMG is never needed
+# here, so we skip it. A real compile/build error still exits non-zero and aborts.
+echo "==> Building the .app bundle only (skip flaky DMG packaging)…"
+npm run tauri build -- --bundles app
 
 [ -d "$BUNDLE" ] || { echo "ERROR: bundle not found at $BUNDLE"; exit 1; }
 
