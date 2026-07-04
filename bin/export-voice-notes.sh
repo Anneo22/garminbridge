@@ -264,7 +264,7 @@ prune_local_audio(){
       key="$(awk -F'\t' -v f="$(basename "$w")" '$2==f{print $1; exit}' "$MANIFEST")"
       [ -n "$key" ] && manifest_mark_pruned "$key"
     fi
-  done < <(find "$DEST" -type f -iname '*.wav' 2>/dev/null)
+  done < <(find "$DEST" -type d -name Archive -prune -o -type f -iname '*.wav' -print 2>/dev/null)
   [ "$pruned" -gt 0 ] && log "audio retention: pruned $pruned old .wav (~$((freed/1024/1024)) MB freed; transcripts kept)"
   return 0
 }

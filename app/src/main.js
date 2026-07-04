@@ -938,6 +938,9 @@ function renderSettings() {
     settingsSection("audio-retention", "Local audio retention", "Mac storage", "Prunes heavy local .wav files after a transcript exists. It never deletes local audio that has no transcript.", [
       renderRetentionSettings(d),
     ]),
+    settingsSection("archived-cleanup", "Archived audio cleanup", "Free Mac storage", "Deletes only archived .wav audio older than the age you choose. Transcripts stay, and active memos and notes are never touched.", [
+      renderArchivedCleanupSettings(d),
+    ]),
     settingsSection("auto-import", "Auto-import", "Free the watch", "Pause background imports when another app needs the watch's USB connection. Resume when GarminBridge should take over again.", [
       renderAutoImportSettings(d),
     ]),
@@ -1222,6 +1225,144 @@ function saveRetentionDays(value) {
   const days = String(value || "").trim();
   if (!/^\d+$/.test(days)) return toast("Enter a whole number of days.", true);
   saveSetting("GVE_AUDIO_RETENTION_DAYS", days);
+}
+
+function positiveWholeDays(value) {
+  const s = String(value || "").trim();
+  if (!/^[1-9]\d*$/.test(s)) return 0;
+  const n = Number(s);
+  return Number.isSafeInteger(n) ? n : 0;
+}
+
+function humanBytes(n) {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = Math.max(0, Number(n) || 0);
+  let unit = units[0];
+  for (const nextUnit of units) {
+    unit = nextUnit;
+    if (value < 1024 || unit === units[units.length - 1]) break;
+    value /= 1024;
+  }
+  return unit === "B" ? `${Math.round(value)} B` : `${value.toFixed(1)} ${unit}`;
+}
+
+function renderArchivedCleanupSettings(d) {
+  const retention = d.archived_retention || {};
+  const current = retention.days || "";
+  const days = positiveWholeDays(current);
+  const known = ["", "30", "90", "180"];
+  const selected = known.includes(current) ? current : "custom";
+  const custom = el("input", { class: "author-input setting-days-input", type: "number", min: "1", step: "1",
+    value: selected === "custom" ? current : "180", "aria-label": "Archived audio cleanup days" });
+  const customWrap = el("div", { class: "setting-custom-days" }, [
+    settingField("Days", custom, "Use 1 or more. 0 is not allowed for archived audio cleanup."),
+    el("button", { class: "btn btn-outline", onclick: () => saveArchivedRetentionDays(custom.value) },
+      [icon("check"), el("span", { text: "Save days" })]),
+  ]);
+  customWrap.hidden = selected !== "custom";
+  const select = el("select", { class: "sport-select setting-select", "aria-label": "Archived audio cleanup",
+    onchange: (e) => {
+      const v = e.target.value;
+      customWrap.hidden = v !== "custom";
+      if (v === "custom") return;
+      if (v === "") saveSetting("GVE_ARCHIVED_VOICE_RETENTION_DAYS", "", { unset: true });
+      else saveSetting("GVE_ARCHIVED_VOICE_RETENTION_DAYS", v);
+    } }, [
+    el("option", { value: "", text: "Off" }),
+    el("option", { value: "30", text: "30 days" }),
+    el("option", { value: "90", text: "90 days" }),
+    el("option", { value: "180", text: "180 days" }),
+    el("option", { value: "custom", text: "Custom days" }),
+  ]);
+  select.value = selected;
+  const btn = el("button", { class: "btn btn-outline", disabled: !days,
+    onclick: () => previewArchivedCleanup(days) },
+    [icon("trash"), el("span", { text: "Clean up now" })]);
+  const stats = d.archived_audio || {};
+  return el("div", { class: "settings-grid" }, [
+    settingField("Age", select, "Off means archived audio is kept until you clean it manually."),
+    customWrap,
+    el("div", { class: "setting-action-row" }, [
+      btn,
+      settingNote(days ? "Preview runs first. Nothing is deleted until you confirm." : "Pick an age before cleaning archived audio."),
+    ]),
+    settingSwitch("Automatically clean up on app open", "When this is on and an age is set, GarminBridge cleans matching archived audio at startup.", !!retention.auto,
+      (on) => saveSetting("GVE_ARCHIVED_VOICE_RETENTION_AUTO", "1", { unset: !on })),
+    settingNote(`You have ${stats.count || 0} archived memos using ${humanBytes(stats.bytes || 0)}.`),
+  ]);
+}
+
+function saveArchivedRetentionDays(value) {
+  const days = String(value || "").trim();
+  if (!/^[1-9]\d*$/.test(days)) return toast("Choose a whole number of days (1 or more).", true);
+  saveSetting("GVE_ARCHIVED_VOICE_RETENTION_DAYS", days);
+}
+
+async function previewArchivedCleanup(days) {
+  if (!positiveWholeDays(days)) return toast("Pick an archive age first.", true);
+  showScan("Checking archived audio");
+  try {
+    const res = await engine(["voice-cleanup-archived", "--days", String(days)]);
+    hideScan();
+    const count = Number(res.count || 0);
+    if (count === 0) return toast(`No archived memos older than ${days} days.`);
+    openArchivedCleanupConfirm(res, days);
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not check archived audio.", true);
+  }
+}
+
+function archivedCleanupRows(items) {
+  const rows = (items || []).slice(0, 6).map((item) => el("li", {}, [
+    el("div", { class: "nm", text: item.name || "Archived memo" }),
+    el("span", { class: "eff", text: `${item.age_days || 0} days old · ${humanBytes(item.bytes || 0)}` }),
+  ]));
+  if ((items || []).length > rows.length) {
+    rows.push(el("li", {}, [
+      el("div", { class: "nm", text: `${items.length - rows.length} more archived memos` }),
+      el("span", { class: "eff", text: "They are included in the same confirmed cleanup." }),
+    ]));
+  }
+  return rows;
+}
+
+function openArchivedCleanupConfirm(res, days) {
+  const count = Number(res.count || 0);
+  const total = Number(res.total_bytes || 0);
+  const memoWord = count === 1 ? "memo" : "memos";
+  openModal({
+    title: "Delete archived audio?",
+    lead: `Delete ${count} archived ${memoWord} and free ~${humanBytes(total)}? The transcripts stay.`,
+    list: archivedCleanupRows(res.items || []),
+    warn: "Only archived .wav audio older than the selected age is deleted. Active memos, transcripts, and notes stay.",
+    warnClass: "permanent",
+    warnIcon: "trash",
+    confirmLabel: "Delete archived audio",
+    confirmDanger: true,
+    blocked: false,
+    onConfirm: () => applyArchivedCleanup(days),
+  });
+}
+
+async function applyArchivedCleanup(days) {
+  closeModal();
+  showScan("Cleaning archived audio");
+  try {
+    const res = await engine(["voice-cleanup-archived", "--days", String(days), "--apply"]);
+    try {
+      setSettingsState(await engine(["settings-get"]));
+    } catch (e) {
+      // Cleanup already ran; keep the success toast even if the stats refresh fails.
+    }
+    hideScan();
+    toast(res.message || "Archived audio cleanup finished.");
+    if (state.view === "settings") renderSettings();
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not clean archived audio.", true);
+    if (state.view === "settings") renderSettings();
+  }
 }
 
 function renderAutoImportSettings(d) {
@@ -2808,6 +2949,37 @@ function clampDocumentScroll() {
   if (doc && doc.scrollTop) doc.scrollTop = 0;
 }
 
+async function runArchivedAudioAutoCleanup() {
+  try {
+    let d = settingsData();
+    if (!state.settings.loaded) {
+      d = await engine(["settings-get"]);
+      setSettingsState(d);
+    }
+    const retention = d.archived_retention || {};
+    const days = positiveWholeDays(retention.days);
+    if (!retention.auto || !days) return;
+    const res = await engine(["voice-cleanup-archived", "--days", String(days), "--apply"]);
+    const deleted = Number(res.deleted_count || 0);
+    const freed = Number(res.freed_bytes || 0);
+    if (deleted > 0 || freed > 0) {
+      toast(res.message || "Archived audio cleanup finished.");
+      try {
+        setSettingsState(await engine(["settings-get"]));
+        if (state.view === "settings") renderSettings();
+      } catch (e) {
+        // The cleanup already succeeded; failing to refresh Settings stats is non-fatal.
+      }
+    }
+  } catch (e) {
+    // Startup cleanup is optional; never let it break first paint or navigation.
+  }
+}
+
+function scheduleArchivedAudioAutoCleanup() {
+  requestAnimationFrame(() => setTimeout(runArchivedAudioAutoCleanup, 0));
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   // Top-nav focus can scroll the document and unpin the footer; app scrolling lives in `.scroll`.
   window.addEventListener("scroll", clampDocumentScroll, { capture: true, passive: true });
@@ -2888,6 +3060,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
   window.addEventListener("scroll", hidePreview, true);  // don't leave a stale preview mid-scroll
   showView("content");
+  scheduleArchivedAudioAutoCleanup();
 });
 
 // ===================================================================================
