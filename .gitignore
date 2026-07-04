@@ -14,6 +14,9 @@ config
 # internal hand-off journal (kept local, not published)
 CHANGES.log
 
+# agent conventions doc (describes the internal build workflow; kept local, never publish)
+AGENTS.md
+
 # menu-bar app bundle (built by install-menubar.sh)
 GarminBridge.app/
 
@@ -27,5 +30,5 @@ recon.out
 # Phase 1 Connect prototype (venv, tokens, never publish)
 prototype/
 
-# Claude Code session dir (worktrees, local launch config; never publish)
+# local agent session dir (worktrees, local launch config; never publish)
 .claude/
