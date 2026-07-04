@@ -40,9 +40,18 @@
             <circle class="node" cx="16" cy="8" r="2.9" />
           </svg>
           <div>
-            <div class="brand-title">Content Manager</div>
+            <div id="brand-title" class="brand-title">Content Manager</div>
             <div class="brand-sub kicker">GarminBridge</div>
           </div>
+        </div>
+        <nav id="view-nav" class="seg view-nav" aria-label="Main view">
+          <button class="seg-btn is-active" aria-pressed="true" data-view="content">Content</button>
+          <button class="seg-btn" aria-pressed="false" data-view="voice">Voice memos</button>
+          <button class="seg-btn" aria-pressed="false" data-view="settings">Settings</button>
+        </nav>
+        <div class="search-wrap masthead-search">
+          <span class="ico" data-icon="search"></span>
+          <input id="search" class="search" type="search" placeholder="Search" />
         </div>
         <div class="topbar-right">
           <div class="theme-wrap" title="Appearance">
@@ -77,12 +86,8 @@
       </div>
     </div>
 
-    <section class="toolbar">
+    <section id="content-toolbar" class="toolbar">
       <div class="wrap">
-        <div class="search-wrap">
-          <span class="ico" data-icon="search"></span>
-          <input id="search" class="search" type="search" placeholder="Search workouts, routes and places" />
-        </div>
         <div class="seg" id="filter-loc" role="group" aria-label="Filter by where items live">
           <button class="seg-btn is-active" aria-pressed="true" data-loc="on-watch">On my watch</button>
           <button class="seg-btn" aria-pressed="false" data-loc="all">All</button>
@@ -112,28 +117,48 @@
       </div>
     </section>
 
-    <!-- Route controls: sort + filter-by-start-place. Shown only when routes are in view. -->
+    <section id="voice-toolbar" class="toolbar voice-toolbar" hidden>
+      <div class="wrap">
+        <button id="voice-import-btn" class="btn btn-primary" title="Import new voice memos from your Fenix">
+          <span class="ico" data-icon="microphone"></span><span>Import</span>
+        </button>
+        <button id="voice-notes-folder-btn" class="btn btn-outline" title="Choose where voice memo notes are written">
+          <span class="ico" data-icon="folder-open"></span><span>Set notes folder</span>
+        </button>
+        <div class="seg voice-archive-toggle" id="voice-archive-toggle" role="group" aria-label="Voice memo section">
+          <button class="seg-btn is-active" aria-pressed="true" data-archived="0">Active</button>
+          <button class="seg-btn" aria-pressed="false" data-archived="1">Archived</button>
+        </div>
+        <span class="voice-help">Import copies new memos from your Fenix. Send to notes creates an Obsidian note in the folder you choose.</span>
+        <span id="voice-root" class="voice-root"></span>
+      </div>
+    </section>
+
+    <!-- Route controls: sort + area filter. Shown only when routes are in view. -->
     <section id="route-toolbar" class="toolbar toolbar-routes" hidden>
       <div class="wrap">
         <label class="route-ctl">
           <span class="route-ctl-label">Sort routes</span>
           <select id="route-sort" class="sport-select">
-            <option value="name">Name A–Z</option>
-            <option value="dist_asc">Distance: short → long</option>
-            <option value="dist_desc">Distance: long → short</option>
-            <option value="recent">Recently added</option>
+            <option value="dist_asc" selected>Distance: short -> long</option>
+            <option value="dist_desc">Distance: long -> short</option>
+            <option value="name">Name A-Z</option>
             <option value="nearest">Nearest start</option>
+            <option value="recent">Recently added</option>
           </select>
         </label>
         <div class="anchor-wrap">
-          <button id="anchor-btn" class="btn btn-ghost" title="Show only routes that start near a place">
-            <span class="ico" data-icon="map-pin"></span><span id="anchor-btn-text">Start place</span>
+          <button id="anchor-btn" class="btn btn-ghost" title="Show routes that start near an area">
+            <span class="ico" data-icon="map-pin"></span><span id="anchor-btn-text">Routes near...</span>
           </button>
           <span id="anchor-chip" class="anchor-chip" hidden></span>
           <!-- Anchor picker popover, built + toggled by main.js -->
           <div id="anchor-pop" class="anchor-pop" hidden></div>
         </div>
         <div class="spacer"></div>
+        <button id="curate-watch-btn" class="btn btn-outline" title="Choose which routes stay on your watch">
+          <span class="ico" data-icon="device-watch"></span><span>Curate watch</span>
+        </button>
         <button id="add-route-btn" class="btn btn-outline" title="Import a GPX or FIT route and add it to your watch">
           <span class="ico" data-icon="plus"></span><span>Add route</span>
         </button>
@@ -145,7 +170,10 @@
       <div class="wrap">
         <span id="bulk-count">0 selected</span>
         <div class="spacer"></div>
-        <button id="bulk-remove" class="btn btn-danger">Remove from watch</button>
+        <button id="bulk-add-watch" class="btn btn-blue">Add to watch</button>
+        <button id="bulk-remove" class="btn btn-blue">Remove from watch</button>
+        <button id="bulk-voice-unarchive" class="btn btn-blue" hidden>Unarchive</button>
+        <button id="bulk-delete-connect" class="btn btn-danger">Delete from Connect</button>
         <button id="bulk-clear" class="btn btn-ghost">Clear</button>
       </div>
     </div>

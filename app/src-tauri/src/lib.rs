@@ -205,6 +205,83 @@ fn open_output_folder() -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Open a local file in its default app, or reveal it in Finder. Used by the voice memo
+/// panel for reliable playback/reveal without threading local file URLs through the webview CSP.
+#[tauri::command]
+fn open_path(path: String, reveal: bool) -> Result<(), String> {
+    let p = PathBuf::from(path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", p.display()));
+    }
+    let mut cmd = Command::new("open");
+    if reveal {
+        cmd.arg("-R");
+    }
+    cmd.arg(p)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
+/// Play a local audio file in a known macOS audio player. Plain `open <wav>` depends on the
+/// user's file associations; QuickTime is the reliable default on macOS.
+#[tauri::command]
+fn play_audio(path: String) -> Result<(), String> {
+    let p = PathBuf::from(path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", p.display()));
+    }
+    let script = r#"
+on run argv
+  set audioPath to POSIX file (item 1 of argv)
+  tell application "QuickTime Player"
+    set docRef to open audioPath
+    activate
+    play docRef
+  end tell
+end run
+"#;
+    let out = Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .arg(&p)
+        .output()
+        .map_err(|_| "Could not start playback in QuickTime Player.".to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err("Could not start playback in QuickTime Player.".to_string())
+    }
+}
+
+/// Choose the folder where voice memo notes are written and persist it through the existing CLI
+/// config setter (`garminbridge set GVE_OBSIDIAN_VAULT PATH`).
+#[tauri::command]
+fn set_notes_folder() -> Result<String, String> {
+    let pick = r#"try
+    POSIX path of (choose folder with prompt "Choose the folder for voice memo notes")
+on error number -128
+    ""
+end try"#;
+    let out = Command::new("osascript")
+        .arg("-e").arg(pick)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let chosen = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if chosen.is_empty() {
+        return Ok(String::new());
+    }
+    let r = Command::new(cli_path())
+        .arg("set").arg("GVE_OBSIDIAN_VAULT").arg(&chosen)
+        .env("PATH", cli_path_env())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !r.status.success() {
+        return Err(format!("could not set the notes folder: {}", String::from_utf8_lossy(&r.stderr)));
+    }
+    Ok(chosen)
+}
+
 /// Change the output ("Garmin Bridge") folder — the retired Swift menu bar's "Change output
 /// folder…", which the Tauri tray lost in the convergence. Uses an AppleScript folder picker (no
 /// extra crate), nests a "Garmin Bridge" folder unless the user already picked one, points the CLI
@@ -305,6 +382,9 @@ pub fn run() {
             change_output_folder,
             run_action,
             open_output_folder,
+            open_path,
+            play_audio,
+            set_notes_folder,
             set_autostart,
             autostart_enabled
         ])

@@ -210,6 +210,10 @@ local_path(){ local lf="$1"
 # Both are no-ops unless configured (GVE_TRANSCRIBE=1 / GVE_OBSIDIAN_VAULT set).
 write_obsidian(){ local wav="$1" txt="${2:-}" vault="$GVE_OBSIDIAN_VAULT" base note body=""
   base="$(basename "${wav%.*}")"; mkdir -p "$vault" 2>/dev/null || return 0; note="$vault/$base.md"
+  if [ "${GVE_OBSIDIAN_NO_OVERWRITE:-0}" = "1" ]; then
+    local stem="$vault/$base" i=2
+    while [ -e "$note" ]; do note="$stem $i.md"; i=$((i+1)); done
+  fi
   [ -n "$txt" ] && [ -f "$txt" ] && body="$(cat "$txt")"
   { echo "---"; echo "type: voice-memo"; echo "recorded: $base"; echo "audio: \"$wav\""; echo "---"; echo
     [ -n "$body" ] && echo "$body" || echo "_(no transcript)_"

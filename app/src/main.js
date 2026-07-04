@@ -14,7 +14,10 @@ async function engine(args) {
 }
 
 const state = {
+  view: "content",
   snap: null,
+  voice: { loaded: false, root: "", vault_configured: false, items: [], showArchived: false, selected: new Set() },
+  settings: { loaded: false, data: null, installing: "", focus: "" },
   filters: { loc: "on-watch", kind: "all", sport: "", search: "" },
   selected: new Set(),
   staleDismissed: false,
@@ -23,9 +26,11 @@ const state = {
   windWhen: "",            // "" = off, else a ride-time slot key; forecast wind is opt-in
   wind: {},                // route uid -> {deg,speed} for the chosen hour (deg = blows FROM)
   windTried: new Set(),    // uids fetched for the current slot; reset when the slot changes
-  sort: "name",            // routes sort: name | dist_asc | dist_desc | recent | nearest
-  anchor: null,            // start-place filter anchor { lat, lon, label, approximate? }
+  routeWind: { uid: "", key: "", startHours: 0, reverse: false, loading: false, data: null, error: "" },
+  sort: "dist_asc",        // routes sort: dist_asc | dist_desc | name | nearest | recent
+  anchor: null,            // area filter anchor { lat, lon, label, approximate? }
   radiusKm: 10,            // radius (km) around the anchor to keep routes within
+  pendingAnchorIntent: null,
 };
 
 // Great-circle distance in km between two lat/lon points.
@@ -56,6 +61,15 @@ const SPORT = {
 const sportIcon = (s) => SPORT[s] || "activity";
 const prettySport = (s) => (s ? s.replace(/_/g, " ") : "no sport");
 const kindLabel = (k) => (k === "workout" ? "workout" : "route");
+const TRANSCRIPTION_BACKENDS = [
+  { id: "parakeet", label: "Parakeet", kind: "local", key: "" },
+  { id: "whisper", label: "Whisper", kind: "local", key: "" },
+  { id: "openai", label: "OpenAI", kind: "cloud", key: "GVE_OPENAI_KEY" },
+  { id: "gemini", label: "Gemini", kind: "cloud", key: "GVE_GEMINI_KEY" },
+  { id: "groq", label: "Groq", kind: "cloud", key: "GVE_GROQ_KEY" },
+  { id: "deepgram", label: "Deepgram", kind: "cloud", key: "GVE_DEEPGRAM_KEY" },
+];
+const backendInfo = (id) => TRANSCRIPTION_BACKENDS.find((b) => b.id === id) || TRANSCRIPTION_BACKENDS[0];
 
 const $ = (id) => document.getElementById(id);
 
@@ -131,6 +145,50 @@ function profSvg(prof) {
     svg.appendChild(svgNode("path", { d: area, class: "route-prof-area" }));
   }
   svg.appendChild(svgNode("path", { d: prof.d, class: "route-prof-line" }));
+  return svg;
+}
+
+function pathCum(pts) {
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  return cum;
+}
+function pointAtPath(pts, cum, target) {
+  if (!pts.length) return null;
+  if (target <= 0) return pts[0];
+  const total = cum[cum.length - 1] || 1;
+  if (target >= total) return pts[pts.length - 1];
+  let i = 1; while (i < cum.length - 1 && cum[i] < target) i++;
+  const a = pts[i - 1], b = pts[i], span = cum[i] - cum[i - 1] || 1;
+  const f = (target - cum[i - 1]) / span;
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+}
+function pathSliceD(pts, cum, fromFrac, toFrac) {
+  if (pts.length < 2 || toFrac <= fromFrac) return "";
+  const total = cum[cum.length - 1] || 1;
+  const a = Math.max(0, Math.min(total, fromFrac * total));
+  const b = Math.max(0, Math.min(total, toFrac * total));
+  const start = pointAtPath(pts, cum, a), end = pointAtPath(pts, cum, b);
+  if (!start || !end) return "";
+  const mid = [];
+  for (let i = 1; i < pts.length - 1; i++) if (cum[i] > a && cum[i] < b) mid.push(pts[i]);
+  return "M" + [start, ...mid, end].map((p) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join("L");
+}
+function windMapSvg(thumb, wind, reverse = false) {
+  const svg = svgNode("svg", { viewBox: thumb.vb, class: "route-trace-wind", "aria-hidden": "true" });
+  svg.appendChild(svgNode("path", { d: thumb.d, class: "route-wind-base" }));
+  const pts = pathPoints(thumb.d), cum = pathCum(pts);
+  for (const band of (wind && wind.bands) || []) {
+    const from = reverse ? 1 - band.to : band.from;
+    const to = reverse ? 1 - band.from : band.to;
+    const d = pathSliceD(pts, cum, from, to);
+    if (d) svg.appendChild(svgNode("path", { d, class: "route-wind-band wind-" + band.kind }));
+  }
+  for (const a of directionArrows(pts, [0.55]))
+    svg.appendChild(svgNode("path", { d: "M0 0L-2 -1.15L-2 1.15Z", class: "route-arrow",
+      transform: `translate(${a.x} ${a.y}) rotate(${(a.angle + (reverse ? 180 : 0)).toFixed(0)})` }));
+  const start = reverse ? thumb.end : thumb.start;
+  if (start) svg.appendChild(svgNode("circle", { cx: start[0], cy: start[1], r: 1.05, class: "route-start" }));
   return svg;
 }
 const fmtDist = (m) => (m >= 1000 ? (m / 1000).toFixed(m >= 100000 ? 0 : 1) + " km" : Math.round(m) + " m");
@@ -247,7 +305,7 @@ function metaNode(r) {
   const t = rowThumb(r);
   if (r.kind === "course" && t && t.dist_m != null) {
     const node = routeMetrics(t);
-    const d = anchorDistKm(r);   // when a start-place filter is active, show how far the start is
+    const d = anchorDistKm(r);   // when an area filter is active, show how far the start is
     if (d != null) node.appendChild(el("span", { class: "route-anchor-dist rm-clip",
       title: "Starts " + (d < 10 ? d.toFixed(1) : Math.round(d)) + " km from " + state.anchor.label },
       [icon("map-pin"), document.createTextNode(`${d < 10 ? d.toFixed(1) : Math.round(d)} km away`)]));
@@ -339,6 +397,34 @@ function el(tag, props = {}, kids = []) {
     else if (v !== false && v != null) n.setAttribute(k, v);
   }
   for (const c of [].concat(kids)) if (c) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  return n;
+}
+
+function highlightedText(text, query, className = "", title = text || "") {
+  const value = text || "";
+  const q = (query || "").trim();
+  const props = {};
+  if (className) props.class = className;
+  if (title) props.title = title;
+  const n = el("span", props);
+  if (!q) {
+    n.textContent = value;
+    return n;
+  }
+  const lower = value.toLowerCase();
+  const needle = q.toLowerCase();
+  let pos = 0, idx = lower.indexOf(needle);
+  if (idx < 0) {
+    n.textContent = value;
+    return n;
+  }
+  while (idx >= 0) {
+    if (idx > pos) n.appendChild(document.createTextNode(value.slice(pos, idx)));
+    n.appendChild(el("mark", { class: "match", text: value.slice(idx, idx + q.length) }));
+    pos = idx + q.length;
+    idx = lower.indexOf(needle, pos);
+  }
+  if (pos < value.length) n.appendChild(document.createTextNode(value.slice(pos)));
   return n;
 }
 
@@ -447,12 +533,15 @@ function sortRoutes(group) {
 }
 
 function render() {
+  if (state.view === "settings") { renderSettings(); return; }
+  if (state.view === "voice") { renderVoice(); return; }
   hidePreview();
   renderWatchPill();
   renderStaleBanner();
   const rows = visibleRows();
   const list = $("list");
   list.replaceChildren();
+  const windRoute = selectedWindRoute(rows);
 
   const groups = ["workout", "course"]
     .map((kind) => {
@@ -462,6 +551,7 @@ function render() {
     .filter(([, g]) => g.length);
   const places = placesVisible();
   renderRouteToolbar(rows);
+  if (windRoute) list.appendChild(routeWindPanel(windRoute));
 
   if (!groups.length && !places.length) {
     list.appendChild(emptyState("Nothing here", "No workouts, routes or places match these filters."));
@@ -489,6 +579,7 @@ function render() {
   renderStatus(rows);
   fillThumbs(rows);
   fetchWind(rows);
+  fetchRouteWind(windRoute);
 }
 
 // Fill route shapes + data the snapshot had no local trace for by fetching the
@@ -557,6 +648,149 @@ function setWindSlot(slot) {
   render();
 }
 
+function routeWindStartDate() {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + Number(state.routeWind.startHours || 0));
+  return d;
+}
+function routeWindStartLabel() {
+  return routeWindStartDate().toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+function selectedWindRoute(rows = null) {
+  const pool = rows || state.snap.items;
+  const courses = pool.filter((r) => r.kind === "course" && state.selected.has(r.uid));
+  return courses.length === 1 ? courses[0] : null;
+}
+function routeWindKey(r) {
+  return [r.uid, routeWindStartDate().toISOString().slice(0, 13), state.routeWind.reverse ? "rev" : "fwd", r.id || "", r.watch_file || "", r.name || ""].join("|");
+}
+function routeWindArgs(r) {
+  const args = ["route-wind", "--start-iso", routeWindStartDate().toISOString()];
+  if (state.routeWind.reverse) args.push("--reverse");
+  if (r.id != null) args.push("--id", String(r.id));
+  if (r.watch_file) args.push("--watch-file", r.watch_file);
+  if (r.name) args.push("--name", r.name);
+  return args;
+}
+async function fetchRouteWind(r) {
+  if (!r || r.kind !== "course") return;
+  const key = routeWindKey(r);
+  if (state.routeWind.loading && state.routeWind.key === key) return;
+  if (state.routeWind.data && state.routeWind.key === key) return;
+  state.routeWind = { ...state.routeWind, uid: r.uid, key, loading: true, data: null, error: "" };
+  render();
+  try {
+    const res = await engine(routeWindArgs(r));
+    if (state.routeWind.key !== key) return;
+    state.routeWind = { ...state.routeWind, loading: false, data: res.wind, error: "" };
+  } catch (e) {
+    if (state.routeWind.key !== key) return;
+    state.routeWind = { ...state.routeWind, loading: false, data: null, error: e.message };
+  }
+  render();
+}
+function setRouteWindHours(v) {
+  state.routeWind = { ...state.routeWind, startHours: Number(v), key: "", data: null, error: "" };
+  render();
+}
+function setRouteWindReverse(reverse) {
+  if (state.routeWind.reverse === reverse) return;
+  state.routeWind = { ...state.routeWind, reverse, key: "", data: null, error: "" };
+  render();
+}
+function windValueText(v) {
+  if (v == null) return "No wind";
+  if (v > 0.5) return `${Math.abs(v).toFixed(1)} km/h tailwind`;
+  if (v < -0.5) return `${Math.abs(v).toFixed(1)} km/h headwind`;
+  return "neutral";
+}
+function signedMeters(v) {
+  if (v == null) return "0 m";
+  return `${v > 0 ? "+" : ""}${Math.round(v)} m`;
+}
+function pctText(p) {
+  p = p || {};
+  return `${p.head || 0}% head / ${p.tail || 0}% tail / ${p.cross || 0}% cross`;
+}
+function kmRange(s) {
+  if (!s) return "";
+  return `km ${s.from_km}-${s.to_km}`;
+}
+function weatherStrip(w) {
+  const wx = (w && w.weather) || {};
+  const rain = wx.rain_probability_max == null ? "rain n/a" : `${wx.rain_probability_max}% rain` + (wx.rain_at_km != null ? ` near km ${wx.rain_at_km}` : "");
+  const gust = wx.gust_max_kmh == null ? "gusts n/a" : `gusts ${wx.gust_max_kmh} km/h`;
+  const feels = wx.feels_min_c == null ? "feels n/a" : `feels ${wx.feels_min_c}-${wx.feels_max_c}°`;
+  return el("div", { class: "route-wind-weather" }, [
+    el("span", {}, [icon("droplet"), document.createTextNode(rain)]),
+    el("span", {}, [icon("wind"), document.createTextNode(gust)]),
+    el("span", {}, [icon("sun"), document.createTextNode(feels)]),
+  ]);
+}
+function routeWindPanel(r) {
+  const thumb = rowThumb(r);
+  const key = routeWindKey(r);
+  const current = state.routeWind.key === key ? state.routeWind : { ...state.routeWind, data: null, loading: false, error: "" };
+  const wind = current.data;
+  const range = el("input", { type: "range", class: "route-wind-range", min: "0", max: "72", step: "1",
+    value: String(state.routeWind.startHours), "aria-label": "Ride start time", onchange: (e) => setRouteWindHours(e.target.value) });
+  const dirBtn = (label, reverse) => el("button", {
+    class: "seg-btn" + (state.routeWind.reverse === reverse ? " is-active" : ""),
+    "aria-pressed": String(state.routeWind.reverse === reverse),
+    onclick: () => setRouteWindReverse(reverse),
+  }, label);
+  const status = current.loading ? "Loading wind along route" : current.error || (!wind ? "Select a route with GPS points to compute wind" : "");
+  const headline = wind ? el("div", { class: "route-wind-headline" }, [
+    el("div", {}, [el("span", { class: "rw-k", text: "Net" }), el("strong", { text: windValueText(wind.net_effective_kmh) })]),
+    el("div", {}, [el("span", { class: "rw-k", text: "Split" }), el("strong", { text: pctText(wind.pct) })]),
+    el("div", {}, [el("span", { class: "rw-k", text: "Wind as climbing" }), el("strong", { text: signedMeters(wind.wind_climb_m) })]),
+  ]) : el("div", { class: "route-wind-status", text: status });
+  const head = wind && wind.worst_headwind;
+  const gust = wind && wind.worst_gust_cross;
+  const callouts = wind ? el("div", { class: "route-wind-callouts" }, [
+    el("div", {}, [
+      el("span", { class: "rw-k", text: "Hardest headwind" }),
+      el("strong", { text: `${kmRange(head)} · ${head.avg_head_kmh || 0} km/h avg` }),
+    ]),
+    el("div", {}, [
+      el("span", { class: "rw-k", text: "Gust/cross stretch" }),
+      el("strong", { text: `${kmRange(gust)} · ${gust.avg_cross_kmh || 0} km/h cross` + (gust.max_gust_kmh ? ` · gusts ${gust.max_gust_kmh}` : "") }),
+    ]),
+  ]) : null;
+  return el("section", { class: "route-wind-panel", "aria-label": "Selected route wind" }, [
+    el("div", { class: "route-wind-top" }, [
+      el("div", { class: "route-wind-title" }, [
+        icon("wind"),
+        el("div", {}, [
+          el("div", { class: "route-wind-name", text: r.name || "Selected route" }),
+          el("div", { class: "route-wind-note", text: "Open-Meteo grid wind, timed at about 22 km/h. Real shelter and exposure will vary." }),
+        ]),
+      ]),
+      el("div", { class: "route-wind-controls" }, [
+        el("label", { class: "route-wind-time" }, [
+          el("span", { text: routeWindStartLabel() }),
+          range,
+        ]),
+        el("div", { class: "seg", role: "group", "aria-label": "Route direction" }, [
+          dirBtn("Forward", false),
+          dirBtn("Reverse", true),
+        ]),
+      ]),
+    ]),
+    el("div", { class: "route-wind-body" }, [
+      el("div", { class: "route-wind-mapwrap" }, [
+        thumb && wind ? windMapSvg(thumb, wind, state.routeWind.reverse) : thumb ? bigMapSvg(thumb) : el("div", { class: "route-wind-map-empty", text: "Loading route shape" }),
+      ]),
+      el("div", { class: "route-wind-summary" }, [
+        headline,
+        wind ? weatherStrip(wind) : null,
+        callouts,
+      ]),
+    ]),
+  ]);
+}
+
 function emptyState(title, sub) {
   return el("div", { class: "empty" }, [
     illoEmpty(), el("div", { class: "empty-title", text: title }), el("div", { class: "empty-sub", text: sub }),
@@ -564,7 +798,877 @@ function emptyState(title, sub) {
 }
 
 // ===================================================================================
-// Route sort + filter-by-start-place. All geo lookups (geocode, "use my location")
+// Main view switch: Content Manager or Voice memos. The voice view reads local memo files
+// through api.py and reuses the proven CLI for import + the existing Obsidian note writer.
+// ===================================================================================
+function resetSearchSilently() {
+  const s = $("search");
+  if (s) s.value = "";
+  state.filters.search = "";
+}
+
+function showView(view) {
+  const loaded = (view === "voice" && state.voice.loaded) ||
+    (view === "settings" && state.settings.loaded) ||
+    (view === "content" && state.snap);
+  if (state.view === view && loaded) return;
+  if (state.view !== view) resetSearchSilently();
+  state.view = view;
+  for (const b of $("view-nav").querySelectorAll(".seg-btn")) {
+    const on = b.dataset.view === view;
+    b.classList.toggle("is-active", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
+  $("brand-title").textContent =
+    view === "voice" ? "Voice memos" : view === "settings" ? "Settings" : "Content Manager";
+  $("content-toolbar").hidden = view !== "content";
+  $("voice-toolbar").hidden = view !== "voice";
+  $("stale-banner").hidden = view !== "content" || $("stale-banner").hidden;
+  $("route-toolbar").hidden = true;
+  $("bulkbar").hidden = true;
+  $("search").closest(".search-wrap").hidden = view === "settings";
+  const refresh = $("refresh-btn");
+  refresh.title = view === "voice"
+    ? "Refresh the local voice memo list"
+    : view === "settings"
+      ? "Reload settings from local config"
+      : "Re-scan the watch over USB (live)";
+  if (view === "voice") {
+    hidePreview();
+    if (!state.voice.loaded) loadVoice(false);
+    else renderVoice();
+  } else if (view === "settings") {
+    hidePreview();
+    if (!state.settings.loaded) loadSettings(false);
+    else renderSettings();
+  } else if (state.snap) {
+    render();
+  } else {
+    load(false);
+  }
+}
+
+function openSettings(section = "") {
+  state.settings.focus = section;
+  showView("settings");
+  setTimeout(focusSettingsTarget, 80);
+  return true;
+}
+
+function focusSettingsTarget() {
+  const target = state.settings.focus ? $("settings-" + state.settings.focus) : $("settings-pane");
+  if (!target) return;
+  target.scrollIntoView({ block: "start" });
+  state.settings.focus = "";
+}
+
+async function loadSettings(refresh = false) {
+  if (refresh) showScan("Reloading settings");
+  else renderSettingsSkeleton();
+  try {
+    const d = await engine(["settings-get"]);
+    setSettingsState(d);
+    renderSettings();
+  } catch (e) {
+    $("list").replaceChildren(emptyState("Could not read settings", e.message));
+  } finally {
+    hideScan();
+  }
+}
+
+function setSettingsState(d) {
+  const focus = state.settings.focus || "";
+  const installing = state.settings.installing || "";
+  state.settings = { loaded: true, data: d, installing, focus };
+}
+
+function settingsData() {
+  return state.settings.data || {};
+}
+
+function renderSettingsSkeleton() {
+  const list = $("list");
+  list.replaceChildren();
+  for (let i = 0; i < 5; i++) {
+    list.appendChild(el("div", { class: "sk-row settings-sk-row" }, [
+      el("div", { class: "sk sk-ico" }),
+      el("div", { class: "sk sk-line", style: `width:${62 + (i * 17) % 24}%` }),
+      el("div", { class: "sk sk-chip" }),
+    ]));
+  }
+}
+
+function renderSettings() {
+  $("content-toolbar").hidden = true;
+  $("voice-toolbar").hidden = true;
+  $("stale-banner").hidden = true;
+  $("route-toolbar").hidden = true;
+  $("bulkbar").hidden = true;
+  const d = settingsData();
+  renderSettingsPill(d);
+  const list = $("list");
+  list.replaceChildren(el("div", { id: "settings-pane", class: "settings-pane" }, [
+    settingsSection("transcription", "Transcription", "Voice memo text", "Turns audio memos into searchable transcript files. Local backends stay on this Mac and are free after install. Cloud backends send audio to the provider you choose and need your API key.", [
+      renderTranscriptionSettings(d),
+    ]),
+    settingsSection("cleanup", "Transcript cleanup", "Optional LLM pass", "Fixes punctuation and removes filler after transcription. Keep raw when you want the untouched transcript beside the cleaned version.", [
+      renderCleanupSettings(d),
+    ]),
+    settingsSection("watch-delete", "Delete from watch", "After import", "Controls when the original memo is removed from the Fenix. Use a stricter mode only when you trust the copy or transcript step.", [
+      renderDeleteSettings(d),
+    ]),
+    settingsSection("audio-retention", "Local audio retention", "Mac storage", "Prunes heavy local .wav files after a transcript exists. It never deletes local audio that has no transcript.", [
+      renderRetentionSettings(d),
+    ]),
+    settingsSection("auto-import", "Auto-import", "Free the watch", "Pause background imports when another app needs the watch's USB connection. Resume when GarminBridge should take over again.", [
+      renderAutoImportSettings(d),
+    ]),
+  ]));
+  renderSettingsStatus(d);
+  setTimeout(focusSettingsTarget, 0);
+}
+
+function renderSettingsPill(d) {
+  const pill = $("watch-pill"), txt = $("watch-pill-text");
+  pill.classList.remove("is-live", "is-cache", "is-none");
+  const paused = !!d.auto_import_paused;
+  pill.classList.add(paused ? "is-cache" : "is-live");
+  txt.textContent = paused ? "Auto-import paused" : "Auto-import active";
+}
+
+function renderSettingsStatus(d) {
+  const t = d.transcription || {};
+  const c = d.cleanup || {};
+  $("status-counts").textContent =
+    `Settings: transcription ${t.enabled ? "on" : "off"} · cleanup ${c.enabled ? "on" : "off"} · watch delete ${d.delete_mode || "keep"}`;
+  $("status-updated").textContent = d.auto_import_paused ? "Watch is free for other apps" : "Auto-import is active";
+}
+
+function settingsSection(id, title, kicker, lead, kids) {
+  return el("section", { id: "settings-" + id, class: "settings-section" }, [
+    el("div", { class: "settings-head" }, [
+      el("div", { class: "settings-title-wrap" }, [
+        el("div", { class: "settings-title", text: title }),
+        el("div", { class: "settings-kicker", text: kicker }),
+      ]),
+      el("p", { class: "settings-lead", text: lead }),
+    ]),
+    el("div", { class: "settings-body" }, kids),
+  ]);
+}
+
+function settingSwitch(label, help, checked, onChange) {
+  const input = el("input", { type: "checkbox", class: "setting-switch-input" });
+  input.checked = !!checked;
+  input.addEventListener("change", () => onChange(input.checked));
+  return el("label", { class: "setting-switch" }, [
+    input,
+    el("span", { class: "setting-switch-ui" }),
+    el("span", { class: "setting-switch-copy" }, [
+      el("span", { class: "setting-switch-label", text: label }),
+      el("span", { class: "setting-help", text: help }),
+    ]),
+  ]);
+}
+
+function settingField(label, control, help = "") {
+  return el("label", { class: "setting-field" }, [
+    el("span", { class: "setting-label", text: label }),
+    control,
+    help ? el("span", { class: "setting-help", text: help }) : null,
+  ]);
+}
+
+function settingNote(text, cls = "") {
+  return el("div", { class: "setting-note" + (cls ? " " + cls : ""), text });
+}
+
+async function saveSetting(key, value, opts = {}) {
+  showScan(opts.scan || "Saving settings");
+  try {
+    const args = ["settings-set", key];
+    if (opts.unset) args.push("--unset");
+    else args.push(String(value));
+    const d = await engine(args);
+    setSettingsState(d);
+    hideScan();
+    toast(opts.toast || d.message || "Settings saved.");
+    renderSettings();
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not save settings.", true);
+    renderSettings();
+  }
+}
+
+function renderTranscriptionSettings(d) {
+  const t = d.transcription || {};
+  const backend = t.backend || "parakeet";
+  const info = backendInfo(backend);
+  const sel = el("select", { class: "sport-select setting-select", "aria-label": "Transcription backend",
+    onchange: (e) => saveSetting("GVE_TRANSCRIBE_BACKEND", e.target.value) },
+    TRANSCRIPTION_BACKENDS.map((b) => el("option", { value: b.id, text: b.label + (b.kind === "local" ? " (local)" : " (cloud)") })));
+  sel.value = backend;
+  const enabled = settingSwitch("Transcription", "Creates a .txt transcript for each memo so search and notes can use the words, not just the audio.", !!t.enabled,
+    (on) => saveSetting("GVE_TRANSCRIBE", "1", { unset: !on }));
+  const backendCopy = info.kind === "local"
+    ? `${info.label} runs offline on this Mac. First use needs a one-time install, then transcription is local and free.`
+    : `${info.label} is a cloud backend. It needs an API key and sends audio to ${info.label} for transcription.`;
+  return el("div", { class: "settings-grid" }, [
+    enabled,
+    settingField("Backend", sel, backendCopy),
+    info.kind === "local" ? renderLocalBackendInstall(info, t) : renderCloudBackendKey(info, t),
+  ]);
+}
+
+function renderLocalBackendInstall(info, t) {
+  const installed = !!(t.local_installed && t.local_installed[info.id]);
+  const installing = state.settings.installing === info.id;
+  const btn = el("button", { class: "btn btn-outline" + (installing ? " is-busy" : ""),
+    disabled: installing, onclick: () => installTranscriptionBackend(info.id) },
+    [icon(installing ? "refresh" : "file-text"), el("span", { text: installing ? "Installing..." : installed ? "Update local backend" : `Install ${info.label}` })]);
+  return el("div", { class: "setting-action-row" }, [
+    btn,
+    settingNote(installed
+      ? `${info.label} is installed. Updating is safe and keeps transcription on this backend.`
+      : `The app installs ${info.label} in its isolated local environment and keeps you here while it runs.`),
+  ]);
+}
+
+function renderCloudBackendKey(info, t) {
+  const saved = !!(t.keys && t.keys[info.id]);
+  const input = el("input", { class: "author-input setting-key-input", type: "password",
+    autocomplete: "off", spellcheck: "false", placeholder: saved ? "Saved, paste a new key to replace it" : `${info.label} API key` });
+  const btn = el("button", { class: "btn btn-outline", onclick: () => saveCloudKey(info, input) },
+    [icon("check"), el("span", { text: saved ? "Replace key and use" : "Save key and use" })]);
+  return el("div", { class: "setting-action-row setting-key-row" }, [
+    input,
+    btn,
+    settingNote(saved
+      ? `${info.label} key is saved locally. The field stays blank so the key is not echoed back.`
+      : `Paste a ${info.label} key to use this cloud backend.`),
+  ]);
+}
+
+async function saveCloudKey(info, input) {
+  const key = (input.value || "").trim();
+  if (!key) return toast("Paste the API key before saving.", true);
+  showScan("Saving cloud key");
+  try {
+    await engine(["settings-set", info.key, key]);
+    await engine(["settings-set", "GVE_TRANSCRIBE_BACKEND", info.id]);
+    const d = await engine(["settings-set", "GVE_TRANSCRIBE", "1"]);
+    setSettingsState(d);
+    hideScan();
+    toast(`${info.label} transcription is ready.`);
+    renderSettings();
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not save that key.", true);
+    renderSettings();
+  }
+}
+
+async function installTranscriptionBackend(backend) {
+  const label = backendInfo(backend).label;
+  state.settings.installing = backend;
+  renderSettings();
+  showScan(`Installing ${label} transcription`);
+  try {
+    const d = await engine(["transcription-install", "--backend", backend]);
+    setSettingsState(d);
+    hideScan();
+    toast(d.message || `${label} transcription is ready.`);
+  } catch (e) {
+    hideScan();
+    toast(e.message || `Could not install ${label}.`, true);
+  } finally {
+    state.settings.installing = "";
+    renderSettings();
+  }
+}
+
+function renderCleanupSettings(d) {
+  const c = d.cleanup || {};
+  const provider = c.backend || "openai";
+  const keySaved = !!(c.keys && c.keys[provider]);
+  return el("div", { class: "settings-grid" }, [
+    settingSwitch("Clean up transcripts", "Runs the raw transcript through an LLM to fix punctuation and remove obvious filler.", !!c.enabled,
+      (on) => saveSetting("GVE_TRANSCRIPT_CLEANUP", "1", { unset: !on })),
+    settingSwitch("Keep raw transcript", "Also saves the untouched transcript as a raw sidecar, useful when cleanup might change wording.", !!c.keep_raw,
+      (on) => saveSetting("GVE_TRANSCRIPT_KEEP_RAW", "1", { unset: !on })),
+    settingNote(keySaved
+      ? `Cleanup uses ${provider}. Its key is saved locally.`
+      : `Cleanup uses ${provider}. Save that provider's cloud key before relying on cleanup.`,
+      keySaved ? "" : "warn"),
+  ]);
+}
+
+function renderDeleteSettings(d) {
+  const select = el("select", { class: "sport-select setting-select", "aria-label": "Delete from watch mode",
+    onchange: (e) => {
+      const v = e.target.value;
+      if (v === "keep") saveSetting("GARMIN_VOICE_DELETE", "", { unset: true });
+      else saveSetting("GARMIN_VOICE_DELETE", v);
+    } }, [
+    el("option", { value: "keep", text: "Keep on watch" }),
+    el("option", { value: "now", text: "Delete after local copy" }),
+    el("option", { value: "transcribed", text: "Delete after transcript" }),
+  ]);
+  select.value = d.delete_mode || "keep";
+  return el("div", { class: "settings-grid" }, [
+    settingField("Mode", select, "Keep is safest. Delete after local copy frees watch space sooner. Delete after transcript waits until searchable text exists."),
+    el("div", { class: "setting-option-notes" }, [
+      settingNote("Keep: import copies the memo to the Mac and leaves the original on the Fenix."),
+      settingNote("Delete after local copy: removes the watch copy once the Mac copy is verified."),
+      settingNote("Delete after transcript: removes the watch copy only after transcription succeeds."),
+    ]),
+  ]);
+}
+
+function renderRetentionSettings(d) {
+  const current = d.audio_retention_days || "";
+  const known = ["", "0", "30", "90"];
+  const selected = known.includes(current) ? current : "custom";
+  const custom = el("input", { class: "author-input setting-days-input", type: "number", min: "0", step: "1",
+    value: selected === "custom" ? current : "30", "aria-label": "Days to keep local audio" });
+  const customWrap = el("div", { class: "setting-custom-days" }, [
+    settingField("Days", custom, "0 means delete the audio as soon as the transcript exists."),
+    el("button", { class: "btn btn-outline", onclick: () => saveRetentionDays(custom.value) },
+      [icon("check"), el("span", { text: "Save days" })]),
+  ]);
+  customWrap.hidden = selected !== "custom";
+  const select = el("select", { class: "sport-select setting-select", "aria-label": "Local audio retention",
+    onchange: (e) => {
+      const v = e.target.value;
+      customWrap.hidden = v !== "custom";
+      if (v === "custom") return;
+      if (v === "") saveSetting("GVE_AUDIO_RETENTION_DAYS", "", { unset: true });
+      else saveSetting("GVE_AUDIO_RETENTION_DAYS", v);
+    } }, [
+    el("option", { value: "", text: "Keep audio forever" }),
+    el("option", { value: "0", text: "Delete once transcribed" }),
+    el("option", { value: "30", text: "Delete after 30 days" }),
+    el("option", { value: "90", text: "Delete after 90 days" }),
+    el("option", { value: "custom", text: "Custom days" }),
+  ]);
+  select.value = selected;
+  return el("div", { class: "settings-grid" }, [
+    settingField("Retention", select, "The transcript stays. This only prunes the local audio file after transcription is done."),
+    customWrap,
+  ]);
+}
+
+function saveRetentionDays(value) {
+  const days = String(value || "").trim();
+  if (!/^\d+$/.test(days)) return toast("Enter a whole number of days.", true);
+  saveSetting("GVE_AUDIO_RETENTION_DAYS", days);
+}
+
+function renderAutoImportSettings(d) {
+  return el("div", { class: "settings-grid" }, [
+    settingSwitch("Pause auto-import", "Keeps GarminBridge from grabbing the watch automatically, so Garmin Express or an MTP app can use it.", !!d.auto_import_paused,
+      (paused) => saveSetting("auto-import", paused ? "paused" : "active",
+        { scan: paused ? "Pausing auto-import" : "Resuming auto-import",
+          toast: paused ? "Auto-import paused. The watch is free for other apps." : "Auto-import resumed." })),
+  ]);
+}
+
+function voiceDisplayTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function voiceDurationText(seconds) {
+  if (seconds == null) return "";
+  const s = Math.max(0, Math.round(Number(seconds)));
+  if (!Number.isFinite(s)) return "";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+}
+
+async function loadVoice(refresh = false) {
+  if (refresh) showScan("Refreshing voice memos");
+  else renderVoiceSkeleton();
+  try {
+    const d = await engine(["voice-list"]);
+    setVoiceState(d);
+    renderVoice();
+  } catch (e) {
+    $("list").replaceChildren(emptyState("Could not read voice memos", e.message));
+  } finally {
+    hideScan();
+  }
+}
+
+function setVoiceState(d) {
+  const showArchived = !!state.voice.showArchived;
+  const selected = state.voice.selected || new Set();
+  const items = d.items || [];
+  const valid = new Set(items.map((m) => m.audio_path));
+  for (const path of [...selected]) if (!valid.has(path)) selected.delete(path);
+  state.voice = { loaded: true, root: d.root || "", vault_configured: !!d.vault_configured,
+    vault: d.vault || "", items, showArchived, selected };
+}
+
+function renderVoiceSkeleton() {
+  const list = $("list");
+  list.replaceChildren();
+  for (let i = 0; i < 6; i++) {
+    list.appendChild(el("div", { class: "sk-row voice-sk-row" }, [
+      el("div", { class: "sk sk-ico" }),
+      el("div", { class: "sk sk-line", style: `width:${56 + (i * 19) % 28}%` }),
+      el("div", { class: "sk sk-chip" }),
+    ]));
+  }
+}
+
+function renderVoice() {
+  $("content-toolbar").hidden = true;
+  $("voice-toolbar").hidden = false;
+  $("stale-banner").hidden = true;
+  $("route-toolbar").hidden = true;
+  renderVoiceArchiveToggle();
+  const root = $("voice-root");
+  root.textContent = state.voice.root ? `Folder: ${state.voice.root}` : "";
+  root.title = state.voice.root || "";
+
+  const list = $("list");
+  list.replaceChildren();
+  const allItems = state.voice.items || [];
+  const showArchived = !!state.voice.showArchived;
+  const sectionItems = allItems.filter((m) => !!m.archived === showArchived);
+  const q = (state.filters.search || "").trim().toLowerCase();
+  const items = q
+    ? sectionItems.filter((m) =>
+      (m.name || "").toLowerCase().includes(q) ||
+      (m.transcript || "").toLowerCase().includes(q))
+    : sectionItems;
+  if (!items.length) {
+    list.appendChild(q
+      ? emptyState("No voice memos match", "Search checks memo names and transcripts.")
+      : (showArchived
+        ? emptyState("No archived memos", "Archive moves handled memos out of the active list without deleting them.")
+        : emptyState("No active voice memos", "Import copies new memos from your Fenix into this local folder.")));
+  } else {
+    list.appendChild(el("div", { class: "group-head voice-head" }, [
+      el("span", { class: "group-title", text: showArchived ? "Archived" : "Active voice memos" }),
+      el("span", { class: "group-count", text: String(items.length) }),
+      el("span", { class: "rule" }),
+    ]));
+    for (const memo of items) list.appendChild(voiceRow(memo));
+  }
+  renderVoiceBulkBar();
+  renderVoiceStatus();
+}
+
+function renderVoiceArchiveToggle() {
+  const group = $("voice-archive-toggle");
+  if (!group) return;
+  for (const b of group.querySelectorAll(".seg-btn")) {
+    const on = (b.dataset.archived === "1") === !!state.voice.showArchived;
+    b.classList.toggle("is-active", on);
+    b.setAttribute("aria-pressed", String(on));
+  }
+}
+
+function renderVoiceStatus() {
+  const items = state.voice.items || [];
+  const active = items.filter((m) => !m.archived).length;
+  const archived = items.filter((m) => m.archived).length;
+  const transcribed = items.filter((m) => m.has_transcript).length;
+  const notes = items.filter((m) => m.note_exists).length;
+  $("status-counts").textContent =
+    `Voice memos: ${active} active · ${archived} archived · transcripts: ${transcribed} · notes: ${notes}`;
+  $("status-updated").textContent = state.voice.vault_configured ? "Obsidian configured" : "No Obsidian vault configured";
+}
+
+function voiceSelectedSet() {
+  if (!state.voice.selected) state.voice.selected = new Set();
+  return state.voice.selected;
+}
+
+function selectedVoiceMemos() {
+  const selected = voiceSelectedSet();
+  return (state.voice.items || []).filter((m) => selected.has(m.audio_path));
+}
+
+function voiceAction(iconName, label, onClick, extraClass = "") {
+  return el("button", {
+    class: `btn btn-ghost voice-action${extraClass ? " " + extraClass : ""}`,
+    title: label,
+    "aria-label": label,
+    onclick: onClick,
+  }, [icon(iconName)]);
+}
+
+function voiceRow(memo) {
+  const transcript = memo.has_transcript
+    ? (memo.transcript || "(empty transcript)")
+    : "No transcript yet. Transcription is optional; it adds searchable text when you want it.";
+  const q = state.filters.search || "";
+  const selected = voiceSelectedSet().has(memo.audio_path);
+  const check = el("input", { type: "checkbox", class: "row-check voice-check",
+    "aria-label": "Select " + (memo.name || "voice memo") });
+  check.checked = selected;
+  const play = voiceAction("player-play", "Play audio", () => playVoiceMemo(memo));
+  const transcribe = !memo.has_transcript
+    ? voiceAction("file-text", "Transcribe memo", () => transcribeVoiceMemo(memo), "voice-action-outline")
+    : null;
+  const reveal = voiceAction("folder-open", "Reveal audio in Finder", () => revealVoiceMemo(memo));
+  const rename = voiceAction("pencil", "Rename memo", () => openRenameVoiceMemo(memo));
+  const note = voiceAction(memo.note_exists ? "check" : "file-text",
+    memo.note_exists ? "Already in notes" : "Send to notes", () => sendVoiceToNotes(memo),
+    memo.note_exists ? "voice-action-done" : "voice-action-outline");
+  if (memo.note_exists) note.disabled = true;
+  const archive = voiceAction("folder-open",
+    memo.archived ? "Unarchive memo" : "Archive memo", () => archiveVoiceMemo(memo));
+  const del = voiceAction("trash", "Delete local memo", () => deleteVoiceMemo(memo), "voice-action-danger");
+  const meta = [voiceDurationText(memo.duration), voiceDisplayTime(memo.time)].filter(Boolean).join(" · ");
+  const row = el("article", { class: "voice-row" + (selected ? " is-selected" : "") }, [
+    check,
+    el("div", { class: "voice-main" }, [
+      el("div", { class: "voice-title-line" }, [
+        highlightedText(memo.name || "Voice memo", q, "voice-title"),
+      ]),
+      el("div", { class: "voice-meta", text: meta }),
+      highlightedText(transcript, memo.has_transcript ? q : "", "voice-transcript" + (memo.has_transcript ? "" : " is-missing"), ""),
+    ]),
+    el("div", { class: "voice-actions" }, [play, transcribe, reveal, rename, note, archive, del]),
+  ]);
+  check.addEventListener("change", () => {
+    if (check.checked) voiceSelectedSet().add(memo.audio_path);
+    else voiceSelectedSet().delete(memo.audio_path);
+    row.classList.toggle("is-selected", check.checked);
+    renderVoiceBulkBar();
+  });
+  return row;
+}
+
+async function playVoiceMemo(memo) {
+  try { await invoke("play_audio", { path: memo.audio_path }); }
+  catch { toast("Could not start playback. Use Reveal to open the memo in Finder.", true); }
+}
+
+async function revealVoiceMemo(memo) {
+  try { await invoke("open_path", { path: memo.audio_path, reveal: true }); }
+  catch { toast("Could not reveal that memo in Finder.", true); }
+}
+
+function voiceSettingsPane() {
+  return $("settings-pane");
+}
+
+function openVoiceSettingsPane() {
+  return openSettings("transcription");
+}
+
+function openTranscriptionOptionalPopup() {
+  openModal({
+    title: "Transcription is optional",
+    lead: "It turns a memo into searchable text. The audio, archive, delete, play, and notes actions still work without it.",
+    list: [
+      el("li", { class: "modal-bullet", text: "Open Settings to choose a local backend or save a cloud API key." }),
+      el("li", { class: "modal-bullet", text: "Local backends are installed by the app and keep audio on this Mac." }),
+    ],
+    warn: "Open Settings to choose or repair the transcription backend.",
+    warnClass: "reversible", warnIcon: "file-text",
+    confirmLabel: "Open Settings", confirmDanger: false, blocked: false,
+    onConfirm: () => { closeModal(); openVoiceSettingsPane(); },
+  });
+}
+
+function openSendToNotesSetup(memo) {
+  openModal({
+    title: "Send to notes",
+    lead: "Pick the folder before the note is written.",
+    list: [
+      el("li", { class: "modal-bullet", text: "Send to notes creates one Markdown note for this voice memo." }),
+      el("li", { class: "modal-bullet", text: "The folder you pick is where future voice memo notes are written." }),
+      el("li", { class: "modal-bullet", text: "The note includes the recording date, transcript when available, and a link to the local audio." }),
+    ],
+    confirmLabel: "Choose folder", confirmDanger: false, blocked: false,
+    onConfirm: async () => {
+      closeModal();
+      const chosen = await setNotesFolder(false);
+      if (chosen) await doSendVoiceToNotes(memo);
+      else toast("Choose a notes folder before sending memos to notes.");
+    },
+  });
+}
+
+function sendVoiceToNotes(memo) {
+  if (!state.voice.vault_configured) {
+    openSendToNotesSetup(memo);
+    return;
+  }
+  doSendVoiceToNotes(memo);
+}
+
+async function doSendVoiceToNotes(memo) {
+  showScan("Writing note");
+  try {
+    const d = await engine(["voice-note", "--audio", memo.audio_path]);
+    hideScan();
+    toast(d.message || "Sent to notes.");
+    await loadVoice(true);
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not write the note. Choose the notes folder again and try.", true);
+  }
+}
+
+async function setNotesFolder(refresh = true) {
+  try {
+    const chosen = await invoke("set_notes_folder");
+    if (!chosen) return "";
+    state.voice.vault_configured = true;
+    state.voice.vault = chosen;
+    toast("Notes folder set.");
+    if (refresh) await loadVoice(true);
+    return chosen;
+  } catch {
+    toast("Could not open the folder picker.");
+    return "";
+  }
+}
+
+async function transcribeVoiceMemo(memo) {
+  showScan("Transcribing memo");
+  try {
+    const d = await engine(["voice-transcribe", "--audio", memo.audio_path]);
+    hideScan();
+    toast(d.message || "Transcribed.");
+    await loadVoice(true);
+  } catch (e) {
+    hideScan();
+    const unconfigured = e.payload && e.payload.error === "transcription_unconfigured";
+    if (unconfigured) openTranscriptionOptionalPopup();
+    else toast(e.message || "Transcription did not finish. Try again later.", true);
+  }
+}
+
+function openRenameVoiceMemo(memo) {
+  const oldName = memo.name || "";
+  const input = el("input", { class: "rename-input", type: "text", value: oldName, spellcheck: "false", "aria-label": "New memo name" });
+  const note = el("div", { class: "rename-note" });
+
+  openModal({
+    title: "Rename voice memo",
+    lead: "Renames the audio file and transcript sidecars together.",
+    list: [el("li", { class: "rename-li" }, [input, note])],
+    confirmLabel: "Rename", confirmDanger: false, blocked: true,
+    onConfirm: () => doRenameVoiceMemo(memo, input.value.trim()),
+  });
+
+  const cbtn = $("modal-confirm");
+  function update() {
+    const nv = input.value.trim();
+    const changed = !!nv && nv !== oldName;
+    cbtn.disabled = !changed || nv.includes("/");
+    if (!nv) { note.textContent = "Enter a memo name."; note.className = "rename-note"; return; }
+    if (nv.includes("/")) { note.textContent = "Memo names cannot contain slashes."; note.className = "rename-note warn"; return; }
+    if (!changed) { note.textContent = "Same as the current name."; note.className = "rename-note"; return; }
+    note.textContent = "Keeps the audio and transcript files together.";
+    note.className = "rename-note";
+  }
+  input.addEventListener("input", update);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !cbtn.disabled) doRenameVoiceMemo(memo, input.value.trim()); });
+  update();
+  setTimeout(() => { input.focus(); input.select(); }, 30);
+}
+
+async function doRenameVoiceMemo(memo, newName) {
+  if (!newName || newName === memo.name) return;
+  closeModal();
+  showScan("Renaming memo");
+  try {
+    const d = await engine(["voice-rename", "--audio", memo.audio_path, "--name", newName]);
+    hideScan();
+    voiceSelectedSet().delete(memo.audio_path);
+    toast(d.message || "Renamed.");
+    await loadVoice(true);
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not rename that memo.", true);
+  }
+}
+
+async function importVoiceMemos() {
+  const btn = $("voice-import-btn");
+  const ico = btn.querySelector(".ico");
+  const label = btn.querySelector("span:not(.ico)");
+  const oldLabel = label ? label.textContent : "";
+  btn.disabled = true;
+  btn.classList.add("is-busy");
+  if (ico) setIcon(ico, "refresh");
+  if (label) label.textContent = "Importing...";
+  showScan("Importing voice memos...");
+  try {
+    const d = await engine(["voice-import"]);
+    setVoiceState(d);
+    hideScan();
+    toast(d.message || "Voice memo import finished.");
+    renderVoice();
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Voice memo import did not finish. Check the cable and try again.", true);
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove("is-busy");
+    if (ico) setIcon(ico, "microphone");
+    if (label) label.textContent = oldLabel || "Import";
+  }
+}
+
+async function archiveVoiceMemo(memo) {
+  showScan(memo.archived ? "Moving memo back to active" : "Archiving memo");
+  try {
+    const args = ["voice-archive", "--audio", memo.audio_path];
+    if (memo.archived) args.push("--undo");
+    const d = await engine(args);
+    hideScan();
+    toast(d.message || (memo.archived ? "Moved back to active memos." : "Archived."));
+    await loadVoice(true);
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not move that memo.", true);
+  }
+}
+
+function deleteVoiceMemo(memo) {
+  const extras = [memo.has_transcript ? "transcript" : "", memo.has_raw_transcript ? "raw transcript" : ""].filter(Boolean);
+  const detail = extras.length
+    ? `Deletes the local audio and ${extras.join(" + ")} from this Mac.`
+    : "Deletes the local audio from this Mac.";
+  openModal({
+    title: "Delete local memo",
+    lead: "The memo has already been copied off the watch. This removes only the local copy; it does not change Garmin Connect or your notes.",
+    list: [el("li", {}, [
+      el("span", { class: "nm", text: memo.name || "Voice memo" }),
+      el("span", { class: "eff", text: detail }),
+    ])],
+    warn: "Permanent local delete. There is no undo from inside the app.",
+    warnClass: "permanent", warnIcon: "alert-triangle",
+    confirmLabel: "Delete local copy", confirmDanger: true, blocked: false,
+    onConfirm: () => doDeleteVoiceMemo(memo),
+  });
+}
+
+async function doDeleteVoiceMemo(memo) {
+  closeModal();
+  showScan("Deleting local memo");
+  try {
+    const d = await engine(["voice-delete", "--audio", memo.audio_path]);
+    hideScan();
+    voiceSelectedSet().delete(memo.audio_path);
+    toast(d.message || "Deleted the local memo copy.");
+    await loadVoice(true);
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not delete that local memo.", true);
+  }
+}
+
+function renderVoiceBulkBar() {
+  const rows = selectedVoiceMemos();
+  const n = rows.length;
+  $("bulkbar").hidden = n === 0;
+  if (!n) return;
+  const transcribeRows = rows.filter((m) => !m.has_transcript);
+  const archiveRows = rows.filter((m) => !m.archived);
+  const unarchiveRows = rows.filter((m) => m.archived);
+  const parts = [];
+  if (transcribeRows.length) parts.push(`${transcribeRows.length} to transcribe`);
+  if (archiveRows.length) parts.push(`${archiveRows.length} to archive`);
+  if (unarchiveRows.length) parts.push(`${unarchiveRows.length} to unarchive`);
+  $("bulk-count").textContent = (n === 1 ? "1 memo selected" : `${n} memos selected`) + (parts.length ? ` · ${parts.join(" · ")}` : "");
+
+  const transcribe = $("bulk-add-watch"), archive = $("bulk-remove");
+  const del = $("bulk-delete-connect"), unarchive = $("bulk-voice-unarchive");
+  transcribe.hidden = transcribeRows.length === 0;
+  archive.hidden = archiveRows.length === 0;
+  unarchive.hidden = unarchiveRows.length === 0;
+  del.hidden = false;
+  transcribe.replaceChildren(icon("file-text"), el("span", { text: transcribeRows.length === 1 ? "Transcribe 1" : `Transcribe ${transcribeRows.length}` }));
+  archive.replaceChildren(icon("folder-open"), el("span", { text: archiveRows.length === 1 ? "Archive 1" : `Archive ${archiveRows.length}` }));
+  unarchive.replaceChildren(icon("folder-open"), el("span", { text: unarchiveRows.length === 1 ? "Unarchive 1" : `Unarchive ${unarchiveRows.length}` }));
+  del.replaceChildren(icon("trash"), el("span", { text: n === 1 ? "Delete 1" : `Delete ${n}` }));
+}
+
+async function runVoiceBulk(label, memos, argsFor, successText) {
+  if (!memos.length) return toast("No selected memos need that action.");
+  showScan(label);
+  let done = 0, fail = 0, lastMsg = "";
+  for (const memo of memos) {
+    try {
+      await engine(argsFor(memo));
+      done++;
+    } catch (e) {
+      if (e.payload && e.payload.error === "transcription_unconfigured") {
+        hideScan();
+        openTranscriptionOptionalPopup();
+        return;
+      }
+      fail++;
+      lastMsg = e.message || "One memo could not be changed.";
+    }
+  }
+  hideScan();
+  voiceSelectedSet().clear();
+  toast(fail ? `Finished ${done}, ${fail} not changed: ${lastMsg}` : successText(done), fail > 0);
+  await loadVoice(true);
+}
+
+function bulkTranscribeVoice() {
+  const rows = selectedVoiceMemos().filter((m) => !m.has_transcript);
+  runVoiceBulk("Transcribing memos", rows,
+    (m) => ["voice-transcribe", "--audio", m.audio_path],
+    (n) => n === 1 ? "Transcribed 1 memo." : `Transcribed ${n} memos.`);
+}
+
+function bulkArchiveVoice() {
+  const rows = selectedVoiceMemos().filter((m) => !m.archived);
+  runVoiceBulk("Archiving memos", rows,
+    (m) => ["voice-archive", "--audio", m.audio_path],
+    (n) => n === 1 ? "Archived 1 memo." : `Archived ${n} memos.`);
+}
+
+function bulkUnarchiveVoice() {
+  const rows = selectedVoiceMemos().filter((m) => m.archived);
+  runVoiceBulk("Unarchiving memos", rows,
+    (m) => ["voice-archive", "--audio", m.audio_path, "--undo"],
+    (n) => n === 1 ? "Unarchived 1 memo." : `Unarchived ${n} memos.`);
+}
+
+function bulkDeleteVoice() {
+  const rows = selectedVoiceMemos();
+  if (!rows.length) return;
+  openModal({
+    title: "Delete selected memos",
+    lead: "This removes the selected local audio and transcript files from this Mac.",
+    list: rows.map((m) => el("li", {}, [
+      el("span", { class: "nm", text: m.name || "Voice memo" }),
+      el("span", { class: "eff", text: m.has_transcript ? "Deletes audio and transcript sidecars." : "Deletes audio." }),
+    ])),
+    warn: "Permanent local delete. There is no undo from inside the app.",
+    warnClass: "permanent", warnIcon: "alert-triangle",
+    confirmLabel: "Delete local copies", confirmDanger: true, blocked: false,
+    onConfirm: () => {
+      closeModal();
+      runVoiceBulk("Deleting memos", rows,
+        (m) => ["voice-delete", "--audio", m.audio_path],
+        (n) => n === 1 ? "Deleted 1 memo." : `Deleted ${n} memos.`);
+    },
+  });
+}
+
+// ===================================================================================
+// Route sort + area filtering. All geo lookups (geocode, "use my location")
 // go through the engine — the webview CSP blocks external HTTP — so this file only
 // holds UI + the km math. Anchor = a point (searched place / saved place / approx
 // present position); routes are kept when their START is within `radiusKm` of it.
@@ -574,12 +1678,73 @@ function routesInView() {
   return k === "all" || k === "course";
 }
 
+function watchCourseRows() {
+  return state.snap.items.filter((r) =>
+    r.kind === "course" && r.on_watch && r.watch_file && r.actions.can_rm_watch);
+}
+
+function selectedCourseRows() {
+  return state.snap.items.filter((r) => r.kind === "course" && state.selected.has(r.uid));
+}
+
+function selectedRows() {
+  return state.snap.items.filter((r) => state.selected.has(r.uid));
+}
+
+function selectableRow(r) {
+  return !!(r.actions.can_rm_watch ||
+    (r.kind === "course" && (r.actions.can_add_to_watch || r.actions.can_rm_connect || r.id || r.watch_file || r.name)));
+}
+
+function bulkAddRows(rows = selectedRows()) {
+  return rows.filter((r) => r.kind === "course" && !r.on_watch && r.actions.can_add_to_watch);
+}
+
+function bulkRemoveRows(rows = selectedRows()) {
+  return rows.filter((r) => r.actions.can_rm_watch);
+}
+
+function bulkConnectDeleteRows(rows = selectedRows()) {
+  return rows.filter((r) => r.kind === "course" && r.in_connect && r.actions.can_rm_connect);
+}
+
+function readdableSource(r) {
+  if (r.in_connect) return "Garmin Connect";
+  if (r.imported) return "your Mac library";
+  return "";
+}
+
+function watchRemovalEffect(r) {
+  const src = readdableSource(r);
+  if (src === "Garmin Connect") return `deleted from ${r.folder} (stays in Garmin Connect)`;
+  if (src) return `deleted from ${r.folder} (re-addable from your Mac library)`;
+  return `deleted from ${r.folder} (permanently removed: not in Connect or your Mac library)`;
+}
+
+function defaultTrimNearestCount() {
+  const rows = watchCourseRows();
+  if (!rows.length) return 10;
+  if (!state.anchor) return Math.min(10, rows.length);
+  const within = rows.filter((r) => {
+    const d = anchorDistKm(r);
+    return d != null && d <= state.radiusKm;
+  }).length;
+  return Math.min(rows.length, within || 10);
+}
+
+function sortedWatchCoursesByAnchor() {
+  const asc = (v) => (v == null ? Infinity : v);
+  const byName = (a, b) => (a.name || "").localeCompare(b.name || "");
+  return watchCourseRows().slice().sort((a, b) => asc(anchorDistKm(a)) - asc(anchorDistKm(b)) || byName(a, b));
+}
+
 function renderRouteToolbar() {
   const tb = $("route-toolbar");
   if (!routesInView()) { tb.hidden = true; closeAnchorPop(); return; }
   tb.hidden = false;
   $("route-sort").value = state.sort;
   renderAnchorChip();
+  renderCurateWatchButton();
 }
 
 function renderAnchorChip() {
@@ -590,17 +1755,28 @@ function renderAnchorChip() {
   chip.replaceChildren(
     icon("map-pin"),
     el("span", { text: `${state.anchor.label}${approx} · within ${state.radiusKm} km` }),
-    el("button", { class: "anchor-chip-x", title: "Clear start-place filter", onclick: clearAnchor }, "×"),
+    el("button", { class: "anchor-chip-x", title: "Clear area filter", onclick: clearAnchor }, "×"),
   );
 }
 
+function renderCurateWatchButton() {
+  const btn = $("curate-watch-btn");
+  const count = watchCourseRows().length;
+  btn.disabled = count === 0;
+  btn.title = count ? "Choose which routes stay on your watch" : "No routes on your watch yet";
+}
+
 function setAnchor(a) {
+  const intent = state.pendingAnchorIntent;
+  state.pendingAnchorIntent = null;
   state.anchor = a;
   state.sort = "nearest";          // proximity is the whole point once you filter by place
   closeAnchorPop();
   render();
+  if (intent && intent.type === "trim-nearest") setTimeout(() => trimWatchToNearest(intent.count), 0);
 }
 function clearAnchor() {
+  state.pendingAnchorIntent = null;
   state.anchor = null;
   if (state.sort === "nearest") state.sort = "name";
   closeAnchorPop();
@@ -608,8 +1784,9 @@ function clearAnchor() {
 }
 
 let _anchorPopOpen = false;
-function toggleAnchorPop() { _anchorPopOpen ? closeAnchorPop() : openAnchorPop(); }
-function closeAnchorPop() {
+function toggleAnchorPop() { _anchorPopOpen ? closeAnchorPop(true) : openAnchorPop(); }
+function closeAnchorPop(clearPending = false) {
+  if (clearPending) state.pendingAnchorIntent = null;
   _anchorPopOpen = false;
   const pop = $("anchor-pop");
   if (pop) { pop.hidden = true; pop.replaceChildren(); }
@@ -802,7 +1979,7 @@ function placeRow(p) {
     el("span", { class: "place-gap" }),
     el("span", { class: "ident" }, [el("span", { class: "sport-ico" }, [icon("map-pin")])]),
     el("div", { class: "row-main" }, [
-      el("div", { class: "row-name", title: p.name || "", text: p.name || "Unnamed" }),
+      highlightedText(p.name || "Unnamed", state.filters.search, "row-name"),
       el("div", { class: "row-meta place-coords", text: fmtCoord(p.lat, p.lon) }),
     ]),
     el("div", { class: "place-actions" }, [rename, del]),
@@ -813,11 +1990,10 @@ function rowNode(r) {
   const selected = state.selected.has(r.uid);
   const check = el("input", { type: "checkbox", class: "row-check" });
   check.checked = selected;
-  if (!r.actions.can_rm_watch) check.disabled = true;
+  if (!selectableRow(r)) check.disabled = true;
   check.addEventListener("change", () => {
     if (check.checked) state.selected.add(r.uid); else state.selected.delete(r.uid);
-    row.classList.toggle("is-selected", check.checked);
-    renderBulkBar();
+    render();
   });
 
   const connectBadge = badge("plug-connected", "Connect", r.in_connect, r.in_connect || r.watch_known,
@@ -833,7 +2009,7 @@ function rowNode(r) {
   else renameBtn.disabled = true;
 
   const stale = r.stale === "orphan";
-  const titleLine = [el("span", { class: "row-name", title: r.name || "", text: r.name || "Unnamed" })];
+  const titleLine = [highlightedText(r.name || "Unnamed", state.filters.search, "row-name")];
   if (stale) titleLine.push(el("span", { class: "row-flag", title: r.location_detail, text: "Stale route" }));
   const row = el("div", { class: "row" + (selected ? " is-selected" : "") }, [
     check,
@@ -889,9 +2065,26 @@ function renderStaleBanner() {
 }
 
 function renderBulkBar() {
-  const n = state.selected.size;
+  if (state.view === "voice") { renderVoiceBulkBar(); return; }
+  const rows = selectedRows();
+  const n = rows.length;
+  const addRows = bulkAddRows(rows);
+  const removeRows = bulkRemoveRows(rows);
+  const deleteRows = bulkConnectDeleteRows(rows);
   $("bulkbar").hidden = n === 0;
-  $("bulk-count").textContent = n === 1 ? "1 selected" : `${n} selected`;
+  const parts = [];
+  if (addRows.length) parts.push(`${addRows.length} to add`);
+  if (removeRows.length) parts.push(`${removeRows.length} on watch`);
+  if (deleteRows.length) parts.push(`${deleteRows.length} in Connect`);
+  $("bulk-count").textContent = (n === 1 ? "1 selected" : `${n} selected`) + (parts.length ? ` · ${parts.join(" · ")}` : "");
+  const add = $("bulk-add-watch"), remove = $("bulk-remove"), del = $("bulk-delete-connect");
+  $("bulk-voice-unarchive").hidden = true;
+  add.hidden = addRows.length === 0;
+  remove.hidden = removeRows.length === 0;
+  del.hidden = deleteRows.length === 0;
+  add.replaceChildren(icon("plus"), el("span", { text: addRows.length === 1 ? "Add 1 to watch" : `Add ${addRows.length} to watch` }));
+  remove.replaceChildren(icon("device-watch"), el("span", { text: removeRows.length === 1 ? "Remove 1 from watch" : `Remove ${removeRows.length} from watch` }));
+  del.replaceChildren(icon("trash"), el("span", { text: deleteRows.length === 1 ? "Delete 1 from Connect" : `Delete ${deleteRows.length} from Connect` }));
 }
 
 function renderStatus(rows) {
@@ -941,17 +2134,17 @@ function openConfirm(pv, jobs) {
   ]));
   const blocked = pv.needs_live_watch && !pv.watch_connected;
   let warn = null, warnClass = "reversible";
-  if (blocked) { warn = pv.kind === "location" ? "Plug your Fenix in over USB to change its saved points." : "Plug your Fenix in over USB to change what is on the watch."; warnClass = "permanent"; }
+  if (blocked) { warn = pv.kind === "location" ? "Plug your Fenix in over USB to change its saved points." : "Plug your Fenix in over USB to change what is on the watch."; }
   else if (pv.kind === "location" && pv.permanent) { warn = "This permanently removes the saved point from your Fenix and the Mac backup. There is no undo."; warnClass = "permanent"; }
   else if (pv.permanent) { warn = "This permanently deletes from Garmin Connect. There is no trash, and it does not remove the copy on your watch."; warnClass = "permanent"; }
-  else if (pv.action === "rm-watch" || pv.action === "clean-watch") warn = "Removed from the watch only. It stays in Garmin Connect, so you can re-add it.";
+  else if (pv.action === "rm-watch" || pv.action === "clean-watch") warn = "Removing from the watch doesn't delete it. Each item stays where it's saved (shown below), so you can re-add it any time.";
   else if (pv.action === "add-to-watch") warn = "Copied onto the watch. It stays in Garmin Connect too.";
 
   openModal({
     title: pv.verb, lead, list,
     warn, warnClass, warnIcon: warnClass === "permanent" ? "alert-triangle" : "device-watch",
     confirmLabel: pv.permanent ? "Delete permanently" : pv.verb,
-    confirmDanger: pv.permanent || pv.action === "rm-watch" || pv.action === "clean-watch",
+    confirmDanger: pv.permanent,
     blocked, onConfirm: () => runJobs(jobs, pv.needs_live_watch),
   });
 }
@@ -971,27 +2164,236 @@ async function runJobs(jobs, needsLive) {
   await load(needsLive);
 }
 
+function openTrimConfirm(title, keepSet) {
+  const rows = watchCourseRows();
+  if (!rows.length) return toast("No routes on the watch to trim.");
+  const removeRows = rows.filter((r) => !keepSet.has(r.uid));
+  if (!removeRows.length) return toast("Nothing to trim.");
+
+  const keepCount = rows.length - removeRows.length;
+  const readdable = removeRows.filter((r) => readdableSource(r));
+  const permanent = removeRows.filter((r) => !readdableSource(r));
+  const connected = state.snap.watch.connected;
+  const opt = permanent.length ? el("input", { type: "checkbox", class: "trim-optin-check" }) : null;
+  const list = readdable.map((r) => el("li", {}, [
+    el("span", { class: "nm", text: r.name || "Unnamed" }),
+    el("span", { class: "eff", text: watchRemovalEffect(r) }),
+  ]));
+
+  if (permanent.length) {
+    list.push(el("li", { class: "trim-optin" }, [
+      el("label", { class: "trim-optin-label" }, [
+        opt,
+        el("span", { text: `Also remove ${permanent.length === 1 ? "1 route" : permanent.length + " routes"} that cannot be re-added` }),
+      ]),
+      el("span", { class: "eff", text: "Off by default. Leave this unchecked to keep them on the watch." }),
+    ]));
+    permanent.forEach((r) => list.push(el("li", { class: "trim-permanent-row" }, [
+      el("span", { class: "nm", text: r.name || "Unnamed" }),
+      el("span", { class: "eff", text: watchRemovalEffect(r) }),
+    ])));
+  }
+
+  const chosenRows = () => readdable.concat(opt && opt.checked ? permanent : []);
+  const warnForState = () => {
+    if (!connected) return ["Plug your Fenix in over USB to change what is on the watch.", "reversible", "alert-triangle"];
+    if (permanent.length && opt && opt.checked) {
+      return [`This permanently removes ${permanent.length === 1 ? "1 route" : permanent.length + " routes"} that are not in Garmin Connect or your Mac library. There is no undo.`, "permanent", "alert-triangle"];
+    }
+    if (permanent.length) {
+      return [`${permanent.length === 1 ? "1 route" : permanent.length + " routes"} cannot be re-added, so this trim leaves them on the watch unless you opt in.`, "reversible", "device-watch"];
+    }
+    const subject = removeRows.length === 1 ? "a route" : "routes";
+    const pronoun = removeRows.length === 1 ? "it" : "them";
+    return [`Removing ${subject} from the watch doesn't delete ${pronoun}. Each stays where it's saved (shown below), so you can re-add ${pronoun} any time.`, "reversible", "device-watch"];
+  };
+
+  const [warn, warnClass, warnIcon] = warnForState();
+  openModal({
+    title,
+    lead: `${keepCount === 1 ? "1 route" : keepCount + " routes"} chosen to stay on the watch. Review what can be removed:`,
+    list,
+    warn, warnClass, warnIcon,
+    confirmLabel: "Trim watch", confirmDanger: false, blocked: !connected,
+    onConfirm: () => {
+      const chosen = chosenRows();
+      if (!chosen.length) return toast("Nothing to trim.");
+      return runJobs([["apply", "rm-watch", "course", { watchFile: chosen.map((r) => r.watch_file).join(",") }]], true);
+    },
+  });
+
+  const cbtn = $("modal-confirm");
+  const update = () => {
+    const [nextWarn, nextWarnClass, nextWarnIcon] = warnForState();
+    setModalWarn(nextWarn, nextWarnClass, nextWarnIcon);
+    cbtn.className = "btn " + (nextWarnClass === "permanent" ? "btn-danger" : "btn-primary");
+    cbtn.disabled = !connected || chosenRows().length === 0;
+  };
+  if (opt) opt.addEventListener("change", update);
+  update();
+}
+
+function openCurateWatchChooser() {
+  const rows = watchCourseRows();
+  if (!rows.length) return toast("No routes on your watch yet.");
+
+  const selectedRows = selectedCourseRows();
+  const selectedOnWatch = rows.filter((r) => state.selected.has(r.uid)).length;
+  const selectGuide = selectedOnWatch
+    ? `${selectedOnWatch === 1 ? "1 on-watch route" : selectedOnWatch + " on-watch routes"} selected.`
+    : (selectedRows.length
+      ? "The selected routes are not on your watch. Tick on-watch routes to keep."
+      : "Tick the on-watch routes you want to keep first.");
+  const keepBtn = el("button", {
+    class: "btn btn-outline",
+    disabled: selectedOnWatch === 0,
+    title: selectedOnWatch ? "Review what will be removed" : "Tick routes on your watch first",
+    onclick: keepOnlySelectedOnWatch,
+  }, "Review selected");
+
+  const countInput = el("input", {
+    class: "curate-count-input tnum",
+    type: "number",
+    min: "1",
+    max: String(rows.length),
+    step: "1",
+    value: String(defaultTrimNearestCount()),
+    disabled: !state.anchor,
+    "aria-label": "Routes to keep on watch",
+  });
+  const anchorGuide = state.anchor
+    ? `Routes near: ${state.anchor.label}.`
+    : "Set an area first.";
+  const nearestBtn = el("button", {
+    class: "btn btn-outline",
+    title: state.anchor ? "Review nearest route trim" : "Set an area first",
+    onclick: state.anchor
+      ? () => trimWatchToNearest(countInput.value)
+      : (e) => {
+        e.stopPropagation();
+        state.pendingAnchorIntent = { type: "trim-nearest", count: countInput.value };
+        closeModal();
+        setTimeout(openAnchorPop, 0);
+      },
+  }, state.anchor ? "Review nearest" : "Set area");
+
+  openModal({
+    title: "Curate watch",
+    lead: `${rows.length === 1 ? "1 route" : rows.length + " routes"} on your watch. Choose how to decide what stays.`,
+    list: [
+      el("li", { class: "curate-choice" }, [
+        el("div", { class: "curate-choice-copy" }, [
+          el("div", { class: "curate-choice-title", text: "Keep only the routes I've selected" }),
+          el("div", { class: "curate-choice-desc", text: "Review every other on-watch route for removal." }),
+          el("div", { class: "curate-choice-note" + (selectedOnWatch ? "" : " is-warn"), text: selectGuide }),
+        ]),
+        el("div", { class: "curate-choice-actions" }, keepBtn),
+      ]),
+      el("li", { class: "curate-choice" }, [
+        el("div", { class: "curate-choice-copy" }, [
+          el("div", { class: "curate-choice-title", text: "Keep the nearest N to an area" }),
+          el("div", { class: "curate-choice-desc", text: "Pick how many nearby on-watch routes should stay." }),
+          el("div", { class: "curate-choice-note" + (state.anchor ? "" : " is-warn"), text: anchorGuide }),
+        ]),
+        el("div", { class: "curate-choice-actions" }, [countInput, nearestBtn]),
+      ]),
+    ],
+    hideConfirm: true,
+  });
+}
+
+function keepOnlySelectedOnWatch() {
+  const keepSet = new Set(selectedCourseRows().map((r) => r.uid));
+  if (!keepSet.size) return toast("Select at least one route to keep.");
+  // Guard the footgun: if none of the selected routes are actually on the watch, "keep only
+  // these" would propose clearing everything on it. Make the user pick on-watch routes to keep.
+  if (!watchCourseRows().some((r) => keepSet.has(r.uid)))
+    return toast("None of the selected routes are on your watch. Select the on-watch routes to keep.");
+  openTrimConfirm("Keep only these on watch", keepSet);
+}
+
+function trimWatchToNearest(count) {
+  if (!state.anchor) return toast("Choose an area first.");
+  const rows = sortedWatchCoursesByAnchor();
+  if (!rows.length) return toast("No routes on the watch to trim.");
+  const fallback = defaultTrimNearestCount();
+  const requested = Number.parseInt(count, 10);
+  const n = Math.max(1, Math.min(rows.length, Number.isFinite(requested) ? requested : fallback));
+  openTrimConfirm("Trim watch to nearest routes", new Set(rows.slice(0, n).map((r) => r.uid)));
+}
+
 function bulkRemove() {
-  const rows = state.snap.items.filter((r) => state.selected.has(r.uid) && r.actions.can_rm_watch);
+  const allRows = selectedRows();
+  const rows = bulkRemoveRows(allRows);
   if (!rows.length) return;
   const byKind = {};
   for (const r of rows) (byKind[r.kind] ||= []).push(r);
   const connected = state.snap.watch.connected;
+  const hasPermanent = rows.some((r) => r.kind === "course" && !readdableSource(r));
+  const unchanged = allRows.length - rows.length;
 
   openModal({
     title: "Remove from your Fenix",
-    lead: `Remove ${rows.length === 1 ? "1 item" : rows.length + " items"} from the watch:`,
+    lead: `Remove ${rows.length === 1 ? "1 on-watch item" : rows.length + " on-watch items"} from the watch.${unchanged ? ` ${unchanged} selected item${unchanged === 1 ? "" : "s"} will not change in this action.` : ""}`,
     list: rows.map((r) => el("li", {}, [
       el("span", { class: "nm", text: r.name || "Unnamed" }),
-      el("span", { class: "eff", text: `deleted from ${r.folder} (stays in Garmin Connect)` }),
+      el("span", { class: "eff", text: r.kind === "course" ? watchRemovalEffect(r) : `deleted from ${r.folder}` }),
     ])),
-    warn: connected ? "Removed from the watch only. They stay in Garmin Connect, so you can re-add them."
-                    : "Plug your Fenix in over USB to change what is on the watch.",
-    warnClass: connected ? "reversible" : "permanent",
-    warnIcon: connected ? "device-watch" : "alert-triangle",
-    confirmLabel: "Remove from watch", confirmDanger: true, blocked: !connected,
+    warn: connected
+      ? (hasPermanent
+        ? "Routes not in Garmin Connect or your Mac library cannot be re-added after removal."
+        : "Removing items from the watch doesn't delete them. Route sources are shown below, so you can re-add saved routes any time.")
+      : "Plug your Fenix in over USB to change what is on the watch.",
+    warnClass: "reversible",
+    warnIcon: "device-watch",
+    confirmLabel: "Remove from watch", confirmDanger: false, blocked: !connected,
     onConfirm: () => runJobs(
       Object.entries(byKind).map(([kind, rs]) => ["apply", "rm-watch", kind, { watchFile: rs.map((r) => r.watch_file).join(",") }]), true),
+  });
+  $("modal-confirm").className = "btn btn-blue";
+}
+
+function bulkAddToWatch() {
+  const allRows = selectedRows();
+  const rows = bulkAddRows(allRows);
+  if (!rows.length) return;
+  const connected = state.snap.watch.connected;
+  const unchanged = allRows.length - rows.length;
+  openModal({
+    title: "Add selected routes to your Fenix",
+    lead: `Add ${rows.length === 1 ? "1 off-watch route" : rows.length + " off-watch routes"} to the watch.${unchanged ? ` ${unchanged} selected item${unchanged === 1 ? "" : "s"} will not change in this action.` : ""}`,
+    list: rows.map((r) => el("li", {}, [
+      el("span", { class: "nm", text: r.name || "Unnamed" }),
+      el("span", { class: "eff", text: `copied into ${r.folder} on your Fenix; stays in Garmin Connect` }),
+    ])),
+    warn: connected
+      ? "Needs your Fenix on USB. If a route has no matching Mac backup, the app will leave that route unchanged and tell you."
+      : "Plug your Fenix in over USB to add routes to the watch.",
+    warnClass: "reversible", warnIcon: "device-watch",
+    confirmLabel: "Add to watch", confirmDanger: false, blocked: !connected,
+    onConfirm: () => runJobs(rows.map((r) => ["apply", "add-to-watch", "course", { id: r.id }]), true),
+  });
+  $("modal-confirm").className = "btn btn-blue";
+}
+
+function bulkDeleteConnect() {
+  const allRows = selectedRows();
+  const rows = bulkConnectDeleteRows(allRows);
+  if (!rows.length) return;
+  const unchanged = allRows.length - rows.length;
+  openModal({
+    title: "Delete from Garmin Connect",
+    lead: `Delete ${rows.length === 1 ? "1 route" : rows.length + " routes"} from Garmin Connect.${unchanged ? ` ${unchanged} selected item${unchanged === 1 ? "" : "s"} will not change in this action.` : ""}`,
+    list: rows.map((r) => el("li", {}, [
+      el("span", { class: "nm", text: r.name || "Unnamed" }),
+      el("span", { class: "eff", text: r.on_watch
+        ? "permanently deleted from Garmin Connect; the watch copy stays on your Fenix"
+        : "permanently deleted from Garmin Connect" }),
+    ])),
+    warn: "Permanent Connect delete. There is no undo, and it does not remove any copy already on your watch.",
+    warnClass: "permanent", warnIcon: "alert-triangle",
+    confirmLabel: "Delete from Connect", confirmDanger: true, blocked: false,
+    onConfirm: () => runJobs(rows.map((r) => ["apply", "rm-connect", "course", { id: r.id }]), false),
   });
 }
 
@@ -1134,16 +2536,21 @@ function deletePlace(p) {
 }
 
 // ---- modal + toast + scan ----
-function openModal({ title, lead, list, warn, warnClass, warnIcon, confirmLabel, confirmDanger, blocked, onConfirm }) {
-  $("modal-title").textContent = title;
-  $("modal-lead").textContent = lead || "";
-  $("modal-list").replaceChildren(...(list || []));
+function setModalWarn(warn, warnClass, warnIcon) {
   const w = $("modal-warn");
   if (warn) {
     w.hidden = false; w.className = "modal-warn " + (warnClass || "reversible");
     w.replaceChildren(icon(warnIcon || "device-watch"), el("span", { text: warn }));
   } else w.hidden = true;
+}
+
+function openModal({ title, lead, list, warn, warnClass, warnIcon, confirmLabel, confirmDanger, blocked, onConfirm, hideConfirm }) {
+  $("modal-title").textContent = title;
+  $("modal-lead").textContent = lead || "";
+  $("modal-list").replaceChildren(...(list || []));
+  setModalWarn(warn, warnClass, warnIcon);
   const cbtn = $("modal-confirm");
+  cbtn.hidden = !!hideConfirm;
   cbtn.textContent = confirmLabel || "Confirm";
   cbtn.className = "btn " + (confirmDanger ? "btn-danger" : "btn-primary");
   cbtn.disabled = !!blocked;
@@ -1200,12 +2607,78 @@ function initTheme() {
   } catch (e) { /* older webview: no live OS-change updates */ }
 }
 
+function focusSearch() {
+  if (state.view === "settings") return;
+  const s = $("search");
+  s.focus();
+  s.select();
+}
+
+function clearSearch() {
+  const s = $("search");
+  if (!s.value && !state.filters.search) return;
+  s.value = "";
+  state.filters.search = "";
+  render();
+}
+
+function clearBulkSelection() {
+  if (state.view === "voice") {
+    voiceSelectedSet().clear();
+    renderVoice();
+  } else {
+    state.selected.clear();
+    render();
+  }
+}
+
+function isTypingTarget(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  return target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll("[data-icon]").forEach((e) => setIcon(e, e.dataset.icon));
   initTheme();
-  $("refresh-btn").addEventListener("click", () => load(true));
+  $("view-nav").addEventListener("click", (e) => {
+    const b = e.target.closest(".seg-btn"); if (!b) return;
+    showView(b.dataset.view);
+  });
+  $("refresh-btn").addEventListener("click", () => {
+    if (state.view === "voice") loadVoice(true);
+    else if (state.view === "settings") loadSettings(true);
+    else load(true);
+  });
+  $("voice-import-btn").addEventListener("click", importVoiceMemos);
+  $("voice-notes-folder-btn").addEventListener("click", () => setNotesFolder(true));
+  $("voice-archive-toggle").addEventListener("click", (e) => {
+    const b = e.target.closest(".seg-btn"); if (!b) return;
+    state.voice.showArchived = b.dataset.archived === "1";
+    voiceSelectedSet().clear();
+    renderVoice();
+  });
   $("new-workout-btn").addEventListener("click", openAuthor);
   $("search").addEventListener("input", (e) => { state.filters.search = e.target.value; render(); });
+  $("search").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      if (state.filters.search) clearSearch();
+      else $("search").blur();
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    const key = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && key === "f") {
+      e.preventDefault();
+      focusSearch();
+      return;
+    }
+    if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingTarget(e.target)) {
+      e.preventDefault();
+      focusSearch();
+    }
+  });
   $("filter-loc").addEventListener("click", (e) => {
     const b = e.target.closest(".seg-btn"); if (!b) return;
     state.filters.loc = b.dataset.loc; segActive("filter-loc", b); render();
@@ -1216,7 +2689,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   $("filter-sport").addEventListener("change", (e) => { state.filters.sport = e.target.value; render(); });
   $("wind-when").addEventListener("change", (e) => setWindSlot(e.target.value));
-  // route controls: sort + start-place filter + add route
+  // route controls: sort + area filter + add route
   $("route-sort").addEventListener("change", (e) => {
     state.sort = e.target.value;
     if (state.sort === "nearest" && !state.anchor) openAnchorPop();  // needs an anchor to mean anything
@@ -1224,18 +2697,22 @@ window.addEventListener("DOMContentLoaded", () => {
   });
   $("anchor-btn").addEventListener("click", (e) => { e.stopPropagation(); toggleAnchorPop(); });
   document.addEventListener("click", (e) => {   // click outside the picker closes it
-    if (_anchorPopOpen && !e.target.closest(".anchor-wrap")) closeAnchorPop();
+    if (_anchorPopOpen && !e.target.closest(".anchor-wrap")) closeAnchorPop(true);
   });
   $("add-route-btn").addEventListener("click", () => $("route-file").click());
   $("route-file").addEventListener("change", onRoutePicked);
-  $("bulk-remove").addEventListener("click", bulkRemove);
-  $("bulk-clear").addEventListener("click", () => { state.selected.clear(); render(); });
+  $("curate-watch-btn").addEventListener("click", openCurateWatchChooser);
+  $("bulk-add-watch").addEventListener("click", () => state.view === "voice" ? bulkTranscribeVoice() : bulkAddToWatch());
+  $("bulk-remove").addEventListener("click", () => state.view === "voice" ? bulkArchiveVoice() : bulkRemove());
+  $("bulk-voice-unarchive").addEventListener("click", bulkUnarchiveVoice);
+  $("bulk-delete-connect").addEventListener("click", () => state.view === "voice" ? bulkDeleteVoice() : bulkDeleteConnect());
+  $("bulk-clear").addEventListener("click", clearBulkSelection);
   $("stale-review").addEventListener("click", reviewStale);
   $("stale-dismiss").addEventListener("click", () => { state.staleDismissed = true; renderStaleBanner(); });
   $("modal-cancel").addEventListener("click", closeModal);
   $("modal").addEventListener("click", (e) => { if (e.target.id === "modal") closeModal(); });
   window.addEventListener("scroll", hidePreview, true);  // don't leave a stale preview mid-scroll
-  load(false);
+  showView("content");
 });
 
 // ===================================================================================
