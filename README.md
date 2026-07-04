@@ -1,50 +1,119 @@
 # GarminBridge
 
-A reliable bridge between your Garmin watch and your Mac. Plug in and it pulls your data
-across automatically. **Voice notes** are the headline: copied the moment you connect,
-named by when you recorded them, optionally transcribed. It also backs up your activity
-`.fit` files, and the same engine is built to reach whatever else Garmin strands on the watch.
+GarminBridge is the Mac-side power tool for a Garmin watch that Garmin never built.
 
-Garmin offers no supported, reliable way to get this onto a Mac. The USB connection is
-famously flaky and the official tools crash. GarminBridge makes it just work, hands-off.
+Garmin Connect and Garmin Express handle sync. They do not give you local file control,
+desktop editing, content curation, versioning, or a clean way to decide exactly what stays
+on the watch. GarminBridge fills that gap: it talks to the watch over USB and manages voice
+notes, routes, workouts, saved places, activities, and device backups from the Mac.
 
-## Features
+The sharpest thing it fixes is route and content management, so start there.
 
-- **Instant on-connect**: a small IOKit watcher imports within seconds of plugging in (no polling).
-- **Named by recording time**: e.g. `2026-06-17_12-25-40.wav`, sortable, no collisions.
-- **Reliable transfer**: a `gphoto2`/MTP backend that reads only the VoiceNotes folder (the usual `libmtp` full-device scan hangs), and automatically handles Garmin Express and the macOS `PTPCamera` daemon fighting for the USB port.
-- **Notifications**: a click-to-open alert when new memos arrive.
-- **Keep or delete, your call**: leave notes on the watch (default), remove them after a verified copy, or only once they're transcribed. Optional local retention can drop the heavy `.wav` after N days while keeping the transcript.
-- **Optional transcription**: local (Parakeet / Whisper via Apple MLX) or bring-your-own cloud key (OpenAI, Gemini, Groq, Deepgram). Off by default. An optional LLM pass tidies punctuation and removes filler ("um", "uh").
-- **Activity backup**: optionally copy your `.fit` activity files to the Mac on the same connect (copy-only, never deletes; they also sync to Garmin Connect). Your raw training data, readable by any FIT tool.
-- **Optional Obsidian output**: write each memo as a note in your vault.
-- **Self-diagnosing**: a diagnostic that tells you whether a failure is the cable or the software.
+## The problem: Garmin's sync is one-way, and the watch never forgets
 
-## Why it works when Android File Transfer / OpenMTP don't
+Garmin's model is push-only. You add a course or a workout in Connect, it syncs to the watch,
+and from then on the two drift apart. There is no honest view of what actually lives where.
 
-Those tools open the watch as a **full MTP volume** and enumerate everything, and a
-modern Garmin holds thousands of map tiles. That full recursive scan is exactly what
-hangs and crashes. This tool never does that:
+Deleting in Connect does not remove the copy already on the watch. Editing a route in Connect
+can push a fresh copy while the old one stays behind, so you end up with two versions of the
+same ride on the device and no way to tell which is current. Deleting on the watch can lose
+the only copy you had. Over months the on-watch course list turns into an endless scroll of
+stale routes, old versions, and rides you did once and never want again. The Fenix sorts that
+list by proximity only: no name sort, no manual order, no folders. There are no tags, no
+notes, no way to mark a course as good for a TT, a gravel day, or bad weather. Finding the
+route you want mid-ride is a scroll and a prayer.
 
-- **Targeted reads, not a full mount.** It reads *one folder by path* with `gphoto2`
-  and pulls only what changed, a handful of PTP commands, never a device-wide scan.
-- **Clears contention first.** Garmin Express and the macOS `PTPCamera` daemon both
-  grab the watch's single USB interface; the tool quietly steps them aside.
-- **Never hard-kills a live session.** It lets MTP close cleanly, so it doesn't wedge
-  the watch into the "not recognised" state.
-- **Self-healing.** Transient failures are retried and recovered, not crashed on.
+None of this is a bug. It is just what Garmin built: the watch is a terminal for the cloud,
+not a library you own. GarminBridge treats it as a library you own.
 
-Targeted, contention-aware, self-healing access, not mount-and-pray. The same engine
-already backs up your activities, and reaches for whatever else Garmin strands on the watch.
+It is built and verified around a Fenix 8. The lower-level paths are discovered at runtime
+where possible, but other Garmin models are only as real as the testing behind them.
 
-## Requirements
+## What GarminBridge does that nobody else does
 
-- macOS (Apple Silicon or Intel)
+**It gives routes and content a real home, on the Mac.** This is the headline. GarminBridge
+shows where every item lives: in Garmin Connect, on the watch, or in your Mac route library.
+Once you can see that, you can act on it.
+
+You curate what stays on the watch instead of hoarding everything Garmin ever synced. Pick the
+routes you want and clear the rest. Choose a start place and trim the watch down to the courses
+that begin near there, so the on-watch list is short and relevant to where you actually ride.
+Deletes work on both sides: remove a route from the watch, from Connect, or from both, and
+GarminBridge clears the stale and stranded copies that Garmin's one-way sync leaves behind.
+Your full library stays safe on the Mac and in Connect while the watch carries only what you
+need on the ride in front of you.
+
+The pieces are already in the app: placement badges that tell you where each item sits, safe
+previews before any delete, exact watch-file targeting, start-place and near-me filtering,
+sorting by name, distance, recently added, or nearest start, and bulk removal from the watch.
+The curation flow is still being made more intuitive, but it already does the thing Garmin
+never let you do: decide, deliberately, what lives on your watch.
+
+**It drains Garmin voice memos reliably.** Plug in the Fenix and GarminBridge pulls new voice
+notes over USB, names them by recording time, transcribes them if transcription is enabled,
+and files them into an organised local folder. It handles a multi-note drain instead of
+forcing you to babysit one file at a time.
+
+This matters because Android File Transfer and OpenMTP usually try to mount or scan the
+whole watch. On a modern Garmin, that means thousands of files and a high chance of hangs
+or crashes. GarminBridge reads the voice-note folder directly and gets the notes out.
+
+**It builds custom workouts that actually animate on the watch.** You can create structured
+running, cycling, swimming, and strength workouts from the Mac, then push them through the
+same local engine the desktop app uses. Strength workouts are the unusual part: GarminBridge
+can build custom strength sessions whose exercises show the on-watch animations. Custom
+non-Garmin strength workouts normally do not do that.
+
+You can describe a workout in plain English, attach a photo of a plan, or build it step by
+step. Before anything is pushed, the engine validates the workout and shows a readable
+preview.
+
+**It backs up the watch, not just activities.** GarminBridge can copy the watch's local
+folders into a Mac mirror: activities, sport profiles, data screens, device settings,
+the watch's own backup blobs, Connect IQ settings and data, routes, workouts, saved
+locations, gear, segments, pace bands, power guides, records, goals, schedule files,
+custom maps, and more. Heavy health telemetry can be opted in separately.
+
+Garmin gives you fragments of this through cloud sync. It does not give you a plain local
+mirror you can inspect, keep, diff, or use when setting up a replacement watch.
+
+**It gets routes in and lets you see them before they hit the watch.** GarminBridge can import
+GPX or FIT routes, build Garmin-readable course files, save them to the Mac route library,
+optionally add them to Garmin Connect, and copy them to `GARMIN/Courses` on the watch over USB.
+Before you commit a route to the watch, the app shows the trace, distance, ascent, descent, an
+elevation preview, kilometre markers, outbound direction, start coordinates, and optional
+weather and wind for a chosen ride time. That is the desktop route workflow Garmin never built.
+
+**It edits saved places from the Mac.** Saved points live in a Garmin FIT file on the watch,
+not in Garmin Connect. GarminBridge reads the Mac backup, lets you rename or delete saved
+places, then writes the verified change back to the watch when it is connected.
+
+## What is included today
+
+- Automatic voice memo import on USB connect, plus manual import on demand.
+- Optional voice transcription with local or cloud backends, plus optional transcript cleanup.
+- Optional Obsidian note output for imported voice memos.
+- Activity `.fit` backup, copy-only.
+- Settings, sport-profile, route, workout, saved-location, and device-content backup, copy-only.
+- A Tauri macOS Content Manager for workouts, routes, and saved places.
+- Connect/watch placement matrix for workouts and routes.
+- Add-to-watch, remove-from-watch, delete-from-Connect, rename, and stale-route cleanup flows.
+- GPX/FIT route import into the Mac route library, Garmin Connect, and the watch.
+- Route previews, start-place filters, nearest-route sorting, and trim-the-watch curation.
+- Workout authoring from text, image, or a manual builder, with validation before push.
+- A menu-bar control for voice import, backups, output folder, transcription, and freeing the
+  watch for other apps.
+
+## Install and use
+
+Requirements:
+
+- macOS
 - [Homebrew](https://brew.sh)
-- `gphoto2` (`brew install gphoto2`)
-- Xcode Command Line Tools (for the on-connect watcher; `xcode-select --install`)
+- `gphoto2`, installed by the setup script if missing
+- Xcode Command Line Tools for the instant-on-connect watcher
 
-## Install
+Install the command-line bridge and the on-connect importer:
 
 ```sh
 git clone https://github.com/Anneo22/garminbridge.git
@@ -52,224 +121,98 @@ cd garminbridge
 ./install.sh
 ```
 
-Or with Homebrew: `brew install anneo22/garmin/garminbridge`, then `garminbridge-setup`.
+`install.sh` installs the USB dependencies, asks where voice memos should go, asks whether
+to enable transcription, asks how deletion from the watch should work, and can install the
+menu-bar app.
 
-`install.sh` installs dependencies (`gphoto2`, `terminal-notifier`), asks where to
-save memos and whether to delete them from the watch, and sets up the on-connect
-importer. It can also set up transcription and the menu-bar app.
-
-That's it. Plug in your watch; new memos appear in your folder and you get a
-clickable notification. To remove the agent: `bin/uninstall-autorun.sh`.
-
-### Menu-bar app (optional)
+Common commands from the repo:
 
 ```sh
-bin/install-menubar.sh
+bin/garminbridge status
+bin/garminbridge voice --keep
+bin/garminbridge voice --delete
+bin/garminbridge voice --delete-after-transcript
+bin/garminbridge activities
+bin/garminbridge settings
+bin/garminbridge pause
+bin/garminbridge resume
+bin/garminbridge free
+bin/garminbridge root "$HOME/Documents/Garmin Bridge"
+bin/garminbridge migrate
 ```
-Adds a menu-bar item that is the control center: live status, **import voice notes**,
-**back up activities**, **open the folder**, choose when to **remove notes from the watch**,
-set **local audio** retention, **change the folder**, and **Pause** to free the watch for
-other apps. Transcription is fully controllable here too: turn it on with an on-device model
-or a cloud key (entered in a native dialog), and toggle transcript cleanup, with no Terminal.
 
-## Usage
+Use `pause` or `free` when Garmin Express, OpenMTP, or another MTP app needs the watch's USB
+connection.
 
-Run a one-off import manually (no agent needed):
+Install the desktop Content Manager locally:
 
 ```sh
-bin/export-voice-notes.sh                          # import; leave notes on the watch
-bin/export-voice-notes.sh --delete                 # import, then remove from the watch
-bin/export-voice-notes.sh --delete-after-transcript # remove from the watch only once transcribed
-bin/export-voice-notes.sh --keep                   # explicit: never delete (default)
+cd app
+./install-local.sh
 ```
 
-Diagnose a connection that isn't working:
+For development:
 
 ```sh
-bin/garmin-diag.sh                   # reports whether it's the cable or the software
+cd app
+npm install
+npm run tauri dev
 ```
 
-## Configuration
+The desktop app is a local, unsigned macOS app. Its data actions go through the Python engine
+in `prototype/connect/`, which is intentionally account-bound and holds the local Garmin
+Connect session. Without that engine and session, the UI can open but content actions will not
+have Garmin data to work with. See [app/README.md](app/README.md) for the app-specific notes.
 
-Set these as environment variables (e.g. in the install command, or a config file,
-see `config.example`). Sensible defaults mean you usually need none.
+Configuration lives in `~/.config/garmin-voice-export/config`. The repo includes
+[config.example](config.example) for the supported environment variables.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `GARMIN_BRIDGE_ROOT` | unset | One root folder for everything: voice notes go to `<root>/Voice Memo`, activity backups to `<root>/Backups`. Recommended; set it from the menu bar or `garminbridge root PATH` |
-| `GARMIN_BRIDGE_DEVICE` | unset | Optional sub-level under the root for several watches / an Edge / users (e.g. `Fenix 8`) |
-| `GARMIN_VOICE_DEST` | `~/Documents/Voice Memos` | Where memos are saved (overrides the root layout if set) |
-| `GARMIN_VOICE_DELETE` | `keep` | Delete from the watch: `keep` \| `now` (after a verified copy) \| `transcribed` (after a transcript too) |
-| `GVE_AUDIO_RETENTION_DAYS` | unset | Drop the local `.wav` this many days after recording, keeping the `.txt` (`0` = as soon as transcribed). Never deletes un-transcribed audio while transcription is on |
-| `GARMIN_VOICE_SUBPATH` | `GARMIN/Audio/VoiceNotes` | On-watch folder (override if a model differs) |
-| `GARMIN_VOICE_REGEX` | `VoiceNotes[0-9]+\.wav` | Which files count as voice notes (`[0-9]+` matches any number, 6, 12, 100) |
-| `GVE_NAME_FORMAT` | `%Y-%m-%d_%H-%M-%S` | Filename format, a `date` format string (see Naming) |
-| `GVE_TRANSCRIBE` | `0` | `1` to transcribe each new memo |
-| `GVE_TRANSCRIBE_BACKEND` | `parakeet` | `parakeet` \| `whisper` \| `openai` \| `gemini` \| `groq` \| `deepgram` |
-| `GVE_TRANSCRIPT_CLEANUP` | `0` | `1` to clean each transcript with an LLM (punctuation, remove filler) |
-| `GVE_CLEANUP_BACKEND` | `openai` | Cleanup provider: `openai` \| `groq` \| `anthropic` \| `gemini` |
-| `GVE_OBSIDIAN_VAULT` | unset | Path to a vault folder to also write each memo as a note |
-| `GARMIN_ACTIVITY_BACKUP` | `0` | `1` to also copy activity `.fit` files on connect (copy-only) |
-| `GARMIN_ACTIVITY_DEST` | `~/Documents/Garmin Activities` | Where activity files are saved |
-| `GARMIN_ACTIVITY_MAX` | `0` | Max activity files to fetch per run (`0` = all) |
-| `GARMIN_SETTINGS_BACKUP` | `0` | `1` to also back up settings, sport profiles, routes, and more on connect (copy-only) |
-| `GARMIN_SETTINGS_DEST` | `<root>/Settings` | Where the settings backup goes (else `~/Documents/Garmin Settings`) |
-| `GARMIN_BACKUP_HEALTH` | `0` | `1` to also mirror heavy health telemetry (Monitor/Metrics/Sleep) |
+## Output layout
 
-> Writing to `~/Documents` requires Full Disk Access for the agent's interpreter
-> (`/bin/bash`) under macOS privacy rules. Point `GARMIN_VOICE_DEST` at a home-root
-> folder (e.g. `~/Voice Memos`) to avoid that.
+The modern layout uses one root folder:
 
-## Output folder
-
-By default voice notes land in `~/Documents/Voice Memos` and activity backups in
-`~/Documents/Garmin Activities`. For one tidy home instead, set an **output root**
-(from the menu bar's "Change output folder…", or the CLI):
-
-```
-garminbridge root "$HOME/Documents/Garmin Bridge"   # pick the location
-garminbridge migrate                                # move existing files in (never overwrites)
-```
-
-That gives you:
-
-```
+```text
 Garmin Bridge/
-├── Voice Memo/        new notes  (Archive/ holds ones already transcribed/handled)
-└── Backups/           activity .fit files
+|-- Voice Memo/
+|   `-- Archive/
+`-- Backups/
+    `-- Settings/
 ```
 
-Bridging more than one device or person? Add a sub-level with
-`garminbridge device "Fenix 8"` (a watch + an Edge, several watches, several users) →
-`Garmin Bridge/Fenix 8/Voice Memo`, and so on.
-
-## Transcription (optional)
-
-Off by default. To enable, install a backend and turn it on:
+Set it with:
 
 ```sh
-bin/install-transcription.sh         # interactive: pick local (MLX) or a cloud key
+bin/garminbridge root "$HOME/Documents/Garmin Bridge"
+bin/garminbridge migrate
 ```
 
-- **Local, offline, free:** Parakeet (NVIDIA Parakeet TDT 0.6B v3 via Apple MLX) or
-  Whisper (`mlx-whisper`). Best on Apple Silicon. The installer sets up an isolated
-  Python environment; nothing else on your system is touched.
-- **Cloud, bring-your-own-key:** OpenAI, Gemini, Groq (`whisper-large-v3-turbo`),
-  or Deepgram. Your key is stored locally in the config file, never committed.
+Multiple devices or users can use a subfolder with `bin/garminbridge device "Fenix 8"`.
 
-Each memo gets a `.txt` next to its `.wav`. With `GVE_OBSIDIAN_VAULT` set, it also
-becomes a note (transcript + recording date + linked audio).
+## Deletion rules
 
-### Transcript cleanup (optional)
+GarminBridge is conservative by default.
 
-Raw speech-to-text keeps every "um" and has rough punctuation. Turn on `GVE_TRANSCRIPT_CLEANUP=1`
-(with `GVE_CLEANUP_BACKEND` = `openai` \| `groq` \| `anthropic` \| `gemini` and the matching key)
-to run each transcript through an LLM that fixes punctuation, paragraphs, and filler, and is
-told not to change meaning, summarise, or translate. The audio stays the source of truth; if a
-cleanup call fails the raw transcript is kept. Set `GVE_TRANSCRIPT_KEEP_RAW=1` to keep both.
+- Voice notes stay on the watch unless you choose `--delete` or `--delete-after-transcript`.
+- Activity, settings, and profile backups are copy-only.
+- Watch-content deletes are previewed before they apply.
+- Garmin Connect deletes are explicit and treated as permanent where Garmin has no trash.
+- Removing a route from the watch does not remove the copy in Garmin Connect or the Mac route
+  library when one exists.
 
-## Naming
+One Garmin caveat: deleting a voice memo `.wav` over USB removes the audio, but the watch can
+keep a dead library entry until it rebuilds the voice-note index after reboot. The cleanest
+watch-side deletion is still the watch's own UI.
 
-Files are named from each note's recording time via `GVE_NAME_FORMAT`, a `date`
-format string. Examples:
+## Roadmap, not built yet
 
-| `GVE_NAME_FORMAT` | Result |
-|---|---|
-| `%Y-%m-%d_%H-%M-%S` (default) | `2026-06-17_12-25-40.wav` |
-| `%Y%m%d-%H%M` | `20260617-1225.wav` |
-| `Memo %Y-%m-%d %H.%M` | `Memo 2026-06-17 12.25.wav` |
-| `%Y/%m/%Y-%m-%d_%H-%M-%S` | `2026/06/2026-06-17_12-25-40.wav` (organised into year/month subfolders) |
+These are planned directions, not shipped features:
 
-## Deleting from the watch
-
-Deletion is opt-in. There are two independent things you can clean up: the **watch**
-and your **Mac**.
-
-**On the watch** (`GARMIN_VOICE_DELETE`): `keep` (default), `now` (remove after a
-verified local copy), or `transcribed` (remove only once a transcript also exists, a
-safety gate so the source audio leaves the watch only when you have both a copy and the
-text). A note is always removed from the watch only after a verified local copy exists.
-
-**On your Mac** (`GVE_AUDIO_RETENTION_DAYS`): voice memos pile up and the audio is the
-heavy part. Set this to drop the local `.wav` N days after it was recorded while keeping
-the `.txt` transcript (`0` = as soon as it's transcribed). While transcription is on it
-never deletes audio that hasn't been transcribed yet, so you don't lose anything silently.
-
-One caveat about the watch: removing a `.wav` over USB frees the audio immediately, but
-the watch's voice-note **library index** isn't accessible over USB, so the watch keeps
-showing a now-empty entry (it won't play) **until it rebuilds its library on reboot.**
-The fully clean alternative is to delete notes from the watch's own UI.
-
-## Pausing / freeing the watch for other apps
-
-This tool grabs the watch's USB connection to import. To use Garmin Express, OpenMTP,
-or any other MTP app, free the watch with `garmin-voice`:
-
-```sh
-bin/garmin-voice pause     # turn auto-import OFF and release the watch (survives reconnects)
-bin/garmin-voice resume    # turn it back ON
-bin/garmin-voice free      # one-shot: release the watch right now (e.g. "the Mac won't see it")
-bin/garmin-voice status    # show current state
-bin/garmin-voice sync      # run an import now (accepts --delete etc.)
-```
-
-`free` is handy for Garmin's notoriously finicky USB connection: it kills every
-process holding the device (this tool, leftover `gphoto2`, the macOS `PTPCamera`
-daemon) so the next app you open connects cleanly.
-
-## Activity backup
-
-Turn on `GARMIN_ACTIVITY_BACKUP=1` (in `install.sh`, the menu bar, or the config) to also
-copy your activity `.fit` files to the Mac whenever you plug in. It runs right after the
-voice import on the same connect, sharing one USB session so the two never collide.
-
-It is **copy-only and never deletes** anything: your activities still sync to Garmin Connect
-and the watch manages its own storage. This is just a local archive of the raw `.fit` files,
-readable by any FIT tool, for your own analysis or another platform.
-
-```sh
-bin/garmin-voice activities          # back up new activities now
-```
-
-Files keep their original timestamped names (e.g. `2026-06-17-07-23-16.fit`), are deduped by
-recording time + size, and a big first backup is resumable, it picks up where it left off if
-the connection drops. Bound it per run with `GARMIN_ACTIVITY_MAX=N`. Default destination:
-`~/Documents/Garmin Activities`.
-
-## Settings & sport-profile backup
-
-Turn on `GARMIN_SETTINGS_BACKUP=1` to also copy your **settings and sport profiles** to the
-Mac on connect, so a new or upgraded watch can be set back up the way you had it. Also
-copy-only, never deletes. Run it now with `garminbridge settings`.
-
-It mirrors (into `<root>/Settings/`): the per-sport profiles (`Sports/` — the data-screen
-"faces"), device settings (`Device/`), the watch's own restorable backup blobs
-(`Device Backup/`, incl. `settings_backup.bak`), Connect IQ app + watch-face settings and
-data (`Connect IQ/`, `Connect IQ Data/`), **routes** (`Courses/`), workouts, saved locations,
-gear, segments, pace bands, power guides, records, goals, and schedule.
-
-Each folder is fingerprinted, so unchanged folders are skipped on later connects. Heavy health
-telemetry is excluded by default (it syncs to Garmin Connect); opt in with
-`GARMIN_BACKUP_HEALTH=1`. (Restoring these back onto a watch is a separate, careful step —
-this is the backup half.)
-
-## How it works
-
-1. A Swift/IOKit daemon (`src/garmin-usb-watcher.swift`) fires the moment a Garmin
-   USB device attaches.
-2. `gphoto2` opens the watch over MTP, reads only the VoiceNotes folder, and downloads
-   new notes (deduped by name + size).
-3. Each note is saved using its recording timestamp; transcription/Obsidian run if
-   enabled; the note is optionally deleted from the watch after verification.
-
-Garmin Express and the macOS `PTPCamera` daemon both try to hold the watch's single
-USB interface; the importer quietly stops them for the duration of a sync.
-
-## Compatibility
-
-Developed and verified on a Fenix 8 (firmware 22.35). Storage paths and device IDs
-are discovered at runtime, not hardcoded, so it should work on any Garmin watch with
-the voice-note feature. Reports for other models are welcome via issues.
+- Route tags and notes, for example marking a route as good for TT, social riding, gravel,
+  bad weather, or a specific training block.
+- Versioning across profiles, settings, routes, and workouts, so changes can be compared and
+  rolled back instead of guessed from memory.
+- A data-field and data-screen editor for sport profiles.
+- A sharing marketplace for routes, workouts, profiles, data screens, and other watch setups.
 
 ## License
 
