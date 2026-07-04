@@ -52,7 +52,9 @@ never let you do: decide, deliberately, what lives on your watch.
 **It drains Garmin voice memos reliably.** Plug in the Fenix and GarminBridge pulls new voice
 notes over USB, names them by recording time, transcribes them if transcription is enabled,
 and files them into an organised local folder. It handles a multi-note drain instead of
-forcing you to babysit one file at a time.
+forcing you to babysit one file at a time. In the desktop app the memos land in a clean list
+where you can play, transcribe, send to notes, rename, archive, or delete them, one at a time
+or in bulk with select-all, and a progress bar shows what is happening while a memo transcribes.
 
 This matters because Android File Transfer and OpenMTP usually try to mount or scan the
 whole watch. On a modern Garmin, that means thousands of files and a high chance of hangs
@@ -93,6 +95,7 @@ places, then writes the verified change back to the watch when it is connected.
 - Automatic voice memo import on USB connect, plus manual import on demand.
 - Optional voice transcription with local or cloud backends, plus optional transcript cleanup.
 - Optional Obsidian note output for imported voice memos.
+- A voice memo panel with grouped per-memo actions, bulk select-all, clear local-backend install status, and progress feedback while the app loads and while a memo transcribes.
 - Activity `.fit` backup, copy-only.
 - Settings, sport-profile, route, workout, saved-location, and device-content backup, copy-only.
 - A Tauri macOS Content Manager for workouts, routes, and saved places.

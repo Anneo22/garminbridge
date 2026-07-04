@@ -169,6 +169,7 @@
     <div id="bulkbar" class="bulkbar" hidden>
       <div class="wrap">
         <span id="bulk-count">0 selected</span>
+        <button id="bulk-select-visible" class="btn btn-ghost bulk-select-visible">Select all</button>
         <div class="spacer"></div>
         <button id="bulk-add-watch" class="btn btn-blue">Add to watch</button>
         <button id="bulk-remove" class="btn btn-blue">Remove from watch</button>
@@ -205,6 +206,15 @@
     </div>
 
     <div id="toast" class="toast" hidden></div>
-    <div id="scan" class="scan" hidden><div class="spinner"></div><div id="scan-text"></div></div>
+    <div id="scan" class="scan" hidden>
+      <div class="scan-card">
+        <div class="scan-top">
+          <div id="scan-text" class="scan-title"></div>
+          <div id="scan-elapsed" class="scan-elapsed" hidden>0:00</div>
+        </div>
+        <div class="scan-bar" aria-hidden="true"><span></span></div>
+        <div id="scan-subtext" class="scan-subtext" hidden></div>
+      </div>
+    </div>
   </body>
 </html>

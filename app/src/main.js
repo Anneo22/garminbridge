@@ -73,6 +73,16 @@ const backendInfo = (id) => TRANSCRIPTION_BACKENDS.find((b) => b.id === id) || T
 
 const $ = (id) => document.getElementById(id);
 
+function setListMode(mode) {
+  const list = $("list");
+  list.classList.toggle("list-settings", mode === "settings");
+  list.classList.toggle("list-voice", mode === "voice");
+}
+
+function nextPaint() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
 function setIcon(el, name) {
   const u = `url('assets/icons/${name}.svg')`;
   el.style.webkitMaskImage = u; el.style.maskImage = u;
@@ -462,7 +472,10 @@ function illoEmpty() {
 // ---- load + render ----
 async function load(refresh = false) {
   if (refresh) showScan("Scanning your Fenix over USB");
-  else renderSkeleton();
+  else {
+    showScan("Loading your library", { elapsed: true });
+    renderSkeleton();
+  }
   try {
     state.snap = await engine(refresh ? ["snapshot", "--refresh"] : ["snapshot"]);
     state.selected.clear();
@@ -477,6 +490,7 @@ async function load(refresh = false) {
 
 function renderSkeleton() {
   const list = $("list");
+  setListMode("content");
   list.replaceChildren();
   for (let i = 0; i < 9; i++) {
     list.appendChild(el("div", { class: "sk-row" }, [
@@ -536,6 +550,7 @@ function render() {
   if (state.view === "settings") { renderSettings(); return; }
   if (state.view === "voice") { renderVoice(); return; }
   hidePreview();
+  setListMode("content");
   renderWatchPill();
   renderStaleBanner();
   const rows = visibleRows();
@@ -888,6 +903,7 @@ function settingsData() {
 
 function renderSettingsSkeleton() {
   const list = $("list");
+  setListMode("settings");
   list.replaceChildren();
   for (let i = 0; i < 5; i++) {
     list.appendChild(el("div", { class: "sk-row settings-sk-row" }, [
@@ -907,7 +923,9 @@ function renderSettings() {
   const d = settingsData();
   renderSettingsPill(d);
   const list = $("list");
+  setListMode("settings");
   list.replaceChildren(el("div", { id: "settings-pane", class: "settings-pane" }, [
+    settingsTopbar(),
     settingsSection("transcription", "Transcription", "Voice memo text", "Turns audio memos into searchable transcript files. Local backends stay on this Mac and are free after install. Cloud backends send audio to the provider you choose and need your API key.", [
       renderTranscriptionSettings(d),
     ]),
@@ -942,6 +960,17 @@ function renderSettingsStatus(d) {
   $("status-counts").textContent =
     `Settings: transcription ${t.enabled ? "on" : "off"} · cleanup ${c.enabled ? "on" : "off"} · watch delete ${d.delete_mode || "keep"}`;
   $("status-updated").textContent = d.auto_import_paused ? "Watch is free for other apps" : "Auto-import is active";
+}
+
+function settingsTopbar() {
+  return el("div", { class: "settings-topbar" }, [
+    el("div", { class: "settings-top-copy" }, [
+      el("div", { class: "settings-page-title", text: "Settings" }),
+      el("div", { class: "settings-page-sub", text: "Voice memo import, transcription, cleanup, and storage." }),
+    ]),
+    el("button", { class: "btn btn-primary settings-done", onclick: () => showView("content") },
+      [icon("check"), el("span", { text: "Done" })]),
+  ]);
 }
 
 function settingsSection(id, title, kicker, lead, kids) {
@@ -1024,10 +1053,16 @@ function renderTranscriptionSettings(d) {
 function renderLocalBackendInstall(info, t) {
   const installed = !!(t.local_installed && t.local_installed[info.id]);
   const installing = state.settings.installing === info.id;
+  const statusClass = installing ? "is-installing" : installed ? "is-installed" : "";
+  const statusText = installing ? "Installing..." : installed ? "Installed" : "Not installed";
   const btn = el("button", { class: "btn btn-outline" + (installing ? " is-busy" : ""),
     disabled: installing, onclick: () => installTranscriptionBackend(info.id) },
-    [icon(installing ? "refresh" : "file-text"), el("span", { text: installing ? "Installing..." : installed ? "Update local backend" : `Install ${info.label}` })]);
-  return el("div", { class: "setting-action-row" }, [
+    [icon(installing ? "refresh" : installed ? "refresh" : "microphone"), el("span", { text: installing ? "Installing..." : installed ? "Reinstall / Update" : `Install ${info.label}` })]);
+  return el("div", { class: "setting-action-row local-backend-row" }, [
+    el("span", { class: "setting-status " + statusClass }, [
+      icon(installing ? "refresh" : installed ? "check" : "x"),
+      el("span", { text: statusText }),
+    ]),
     btn,
     settingNote(installed
       ? `${info.label} is installed. Updating is safe and keeps transcription on this backend.`
@@ -1075,17 +1110,42 @@ async function installTranscriptionBackend(backend) {
   renderSettings();
   showScan(`Installing ${label} transcription`);
   try {
-    const d = await engine(["transcription-install", "--backend", backend]);
+    let d = await engine(["transcription-install", "--backend", backend]);
+    if (!hasLocalBackendStatus(d)) d = await engine(["settings-get"]);
     setSettingsState(d);
     hideScan();
-    toast(d.message || `${label} transcription is ready.`);
+    const installed = !!(d.transcription && d.transcription.local_installed && d.transcription.local_installed[backend]);
+    toast(installed ? `${label} transcription is installed.` : d.message || `${label} transcription is ready.`);
   } catch (e) {
+    const installed = await refreshLocalBackendStatus(backend);
     hideScan();
-    toast(e.message || `Could not install ${label}.`, true);
+    if (installed) toast(`${label} is already installed. You can use it now.`);
+    else toast(installBackendError(label, e), true);
   } finally {
     state.settings.installing = "";
     renderSettings();
   }
+}
+
+function hasLocalBackendStatus(d) {
+  return !!(d && d.transcription && d.transcription.local_installed);
+}
+
+async function refreshLocalBackendStatus(backend) {
+  try {
+    const d = await engine(["settings-get"]);
+    setSettingsState(d);
+    return !!(d.transcription && d.transcription.local_installed && d.transcription.local_installed[backend]);
+  } catch {
+    return false;
+  }
+}
+
+function installBackendError(label, e) {
+  const code = e.payload && e.payload.error;
+  if (code === "installer_missing") return `The ${label} installer is missing in this build. Install the latest app build, then try again.`;
+  if (code === "unsupported_backend") return `${label} does not use the local installer. Choose a local backend, then try again.`;
+  return `${label} could not be installed. Check that the local installer is available, then try Reinstall / Update.`;
 }
 
 function renderCleanupSettings(d) {
@@ -1099,8 +1159,7 @@ function renderCleanupSettings(d) {
       (on) => saveSetting("GVE_TRANSCRIPT_KEEP_RAW", "1", { unset: !on })),
     settingNote(keySaved
       ? `Cleanup uses ${provider}. Its key is saved locally.`
-      : `Cleanup uses ${provider}. Save that provider's cloud key before relying on cleanup.`,
-      keySaved ? "" : "warn"),
+      : `Cleanup uses ${provider}. Save that provider's cloud key before relying on cleanup.`),
   ]);
 }
 
@@ -1193,7 +1252,10 @@ function voiceDurationText(seconds) {
 
 async function loadVoice(refresh = false) {
   if (refresh) showScan("Refreshing voice memos");
-  else renderVoiceSkeleton();
+  else {
+    renderVoiceSkeleton();
+    await nextPaint();
+  }
   try {
     const d = await engine(["voice-list"]);
     setVoiceState(d);
@@ -1217,6 +1279,7 @@ function setVoiceState(d) {
 
 function renderVoiceSkeleton() {
   const list = $("list");
+  setListMode("voice");
   list.replaceChildren();
   for (let i = 0; i < 6; i++) {
     list.appendChild(el("div", { class: "sk-row voice-sk-row" }, [
@@ -1232,6 +1295,7 @@ function renderVoice() {
   $("voice-toolbar").hidden = false;
   $("stale-banner").hidden = true;
   $("route-toolbar").hidden = true;
+  setListMode("voice");
   renderVoiceArchiveToggle();
   const root = $("voice-root");
   root.textContent = state.voice.root ? `Folder: ${state.voice.root}` : "";
@@ -1239,15 +1303,9 @@ function renderVoice() {
 
   const list = $("list");
   list.replaceChildren();
-  const allItems = state.voice.items || [];
   const showArchived = !!state.voice.showArchived;
-  const sectionItems = allItems.filter((m) => !!m.archived === showArchived);
-  const q = (state.filters.search || "").trim().toLowerCase();
-  const items = q
-    ? sectionItems.filter((m) =>
-      (m.name || "").toLowerCase().includes(q) ||
-      (m.transcript || "").toLowerCase().includes(q))
-    : sectionItems;
+  const q = (state.filters.search || "").trim();
+  const items = visibleVoiceMemos();
   if (!items.length) {
     list.appendChild(q
       ? emptyState("No voice memos match", "Search checks memo names and transcripts.")
@@ -1297,6 +1355,16 @@ function selectedVoiceMemos() {
   return (state.voice.items || []).filter((m) => selected.has(m.audio_path));
 }
 
+function visibleVoiceMemos() {
+  const showArchived = !!state.voice.showArchived;
+  const q = (state.filters.search || "").trim().toLowerCase();
+  return (state.voice.items || [])
+    .filter((m) => !!m.archived === showArchived)
+    .filter((m) => !q ||
+      (m.name || "").toLowerCase().includes(q) ||
+      (m.transcript || "").toLowerCase().includes(q));
+}
+
 function voiceAction(iconName, label, onClick, extraClass = "") {
   return el("button", {
     class: `btn btn-ghost voice-action${extraClass ? " " + extraClass : ""}`,
@@ -1304,6 +1372,35 @@ function voiceAction(iconName, label, onClick, extraClass = "") {
     "aria-label": label,
     onclick: onClick,
   }, [icon(iconName)]);
+}
+
+function voiceMenuAction(iconName, label, onClick, extraClass = "") {
+  return el("button", {
+    class: `voice-menu-item${extraClass ? " " + extraClass : ""}`,
+    onclick: (e) => {
+      e.preventDefault();
+      closeVoiceMenus();
+      onClick();
+    },
+  }, [icon(iconName), el("span", { text: label })]);
+}
+
+function closeVoiceMenus() {
+  document.querySelectorAll(".voice-more[open]").forEach((d) => { d.open = false; });
+}
+
+function voiceMoreMenu(kids) {
+  const menu = el("details", { class: "voice-more" }, [
+    el("summary", { class: "btn btn-ghost voice-action voice-action-more", title: "More actions", "aria-label": "More memo actions" }, [
+      el("span", { class: "voice-more-dot", text: "..." }),
+    ]),
+    el("div", { class: "voice-menu" }, kids),
+  ]);
+  menu.addEventListener("toggle", () => {
+    if (!menu.open) return;
+    document.querySelectorAll(".voice-more[open]").forEach((d) => { if (d !== menu) d.open = false; });
+  });
+  return menu;
 }
 
 function voiceRow(memo) {
@@ -1316,18 +1413,21 @@ function voiceRow(memo) {
     "aria-label": "Select " + (memo.name || "voice memo") });
   check.checked = selected;
   const play = voiceAction("player-play", "Play audio", () => playVoiceMemo(memo));
-  const transcribe = !memo.has_transcript
-    ? voiceAction("file-text", "Transcribe memo", () => transcribeVoiceMemo(memo), "voice-action-outline")
-    : null;
-  const reveal = voiceAction("folder-open", "Reveal audio in Finder", () => revealVoiceMemo(memo));
-  const rename = voiceAction("pencil", "Rename memo", () => openRenameVoiceMemo(memo));
+  const transcribe = memo.has_transcript
+    ? voiceAction("check", "Already transcribed", () => {}, "voice-action-done")
+    : voiceAction("microphone", "Transcribe memo", () => transcribeVoiceMemo(memo), "voice-action-outline");
+  if (memo.has_transcript) transcribe.disabled = true;
   const note = voiceAction(memo.note_exists ? "check" : "file-text",
     memo.note_exists ? "Already in notes" : "Send to notes", () => sendVoiceToNotes(memo),
     memo.note_exists ? "voice-action-done" : "voice-action-outline");
   if (memo.note_exists) note.disabled = true;
-  const archive = voiceAction("folder-open",
-    memo.archived ? "Unarchive memo" : "Archive memo", () => archiveVoiceMemo(memo));
+  const archiveIcon = memo.archived ? "arrow-up-right" : "arrow-down-right";
   const del = voiceAction("trash", "Delete local memo", () => deleteVoiceMemo(memo), "voice-action-danger");
+  const more = voiceMoreMenu([
+    voiceMenuAction("folder-open", "Reveal in Finder", () => revealVoiceMemo(memo)),
+    voiceMenuAction("pencil", "Rename", () => openRenameVoiceMemo(memo)),
+    voiceMenuAction(archiveIcon, memo.archived ? "Unarchive" : "Archive", () => archiveVoiceMemo(memo)),
+  ]);
   const meta = [voiceDurationText(memo.duration), voiceDisplayTime(memo.time)].filter(Boolean).join(" · ");
   const row = el("article", { class: "voice-row" + (selected ? " is-selected" : "") }, [
     check,
@@ -1338,7 +1438,12 @@ function voiceRow(memo) {
       el("div", { class: "voice-meta", text: meta }),
       highlightedText(transcript, memo.has_transcript ? q : "", "voice-transcript" + (memo.has_transcript ? "" : " is-missing"), ""),
     ]),
-    el("div", { class: "voice-actions" }, [play, transcribe, reveal, rename, note, archive, del]),
+    el("div", { class: "voice-actions" }, [
+      el("div", { class: "voice-action-group" }, [play, transcribe, note]),
+      el("span", { class: "voice-action-sep" }),
+      more,
+      del,
+    ]),
   ]);
   check.addEventListener("change", () => {
     if (check.checked) voiceSelectedSet().add(memo.audio_path);
@@ -1438,7 +1543,7 @@ async function setNotesFolder(refresh = true) {
 }
 
 async function transcribeVoiceMemo(memo) {
-  showScan("Transcribing memo");
+  showScan("Transcribing...", { elapsed: true, detail: memo.name || "Voice memo" });
   try {
     const d = await engine(["voice-transcribe", "--audio", memo.audio_path]);
     hideScan();
@@ -1579,6 +1684,7 @@ function renderVoiceBulkBar() {
   const n = rows.length;
   $("bulkbar").hidden = n === 0;
   if (!n) return;
+  renderBulkSelectVisible();
   const transcribeRows = rows.filter((m) => !m.has_transcript);
   const archiveRows = rows.filter((m) => !m.archived);
   const unarchiveRows = rows.filter((m) => m.archived);
@@ -1594,15 +1700,15 @@ function renderVoiceBulkBar() {
   archive.hidden = archiveRows.length === 0;
   unarchive.hidden = unarchiveRows.length === 0;
   del.hidden = false;
-  transcribe.replaceChildren(icon("file-text"), el("span", { text: transcribeRows.length === 1 ? "Transcribe 1" : `Transcribe ${transcribeRows.length}` }));
-  archive.replaceChildren(icon("folder-open"), el("span", { text: archiveRows.length === 1 ? "Archive 1" : `Archive ${archiveRows.length}` }));
-  unarchive.replaceChildren(icon("folder-open"), el("span", { text: unarchiveRows.length === 1 ? "Unarchive 1" : `Unarchive ${unarchiveRows.length}` }));
+  transcribe.replaceChildren(icon("microphone"), el("span", { text: transcribeRows.length === 1 ? "Transcribe 1" : `Transcribe ${transcribeRows.length}` }));
+  archive.replaceChildren(icon("arrow-down-right"), el("span", { text: archiveRows.length === 1 ? "Archive 1" : `Archive ${archiveRows.length}` }));
+  unarchive.replaceChildren(icon("arrow-up-right"), el("span", { text: unarchiveRows.length === 1 ? "Unarchive 1" : `Unarchive ${unarchiveRows.length}` }));
   del.replaceChildren(icon("trash"), el("span", { text: n === 1 ? "Delete 1" : `Delete ${n}` }));
 }
 
 async function runVoiceBulk(label, memos, argsFor, successText) {
   if (!memos.length) return toast("No selected memos need that action.");
-  showScan(label);
+  showScan(label, label.toLowerCase().startsWith("transcribing") ? { elapsed: true } : {});
   let done = 0, fail = 0, lastMsg = "";
   for (const memo of memos) {
     try {
@@ -2072,6 +2178,7 @@ function renderBulkBar() {
   const removeRows = bulkRemoveRows(rows);
   const deleteRows = bulkConnectDeleteRows(rows);
   $("bulkbar").hidden = n === 0;
+  if (n) renderBulkSelectVisible();
   const parts = [];
   if (addRows.length) parts.push(`${addRows.length} to add`);
   if (removeRows.length) parts.push(`${removeRows.length} on watch`);
@@ -2085,6 +2192,38 @@ function renderBulkBar() {
   add.replaceChildren(icon("plus"), el("span", { text: addRows.length === 1 ? "Add 1 to watch" : `Add ${addRows.length} to watch` }));
   remove.replaceChildren(icon("device-watch"), el("span", { text: removeRows.length === 1 ? "Remove 1 from watch" : `Remove ${removeRows.length} from watch` }));
   del.replaceChildren(icon("trash"), el("span", { text: deleteRows.length === 1 ? "Delete 1 from Connect" : `Delete ${deleteRows.length} from Connect` }));
+}
+
+function visibleSelectionKeys() {
+  if (state.view === "voice") return visibleVoiceMemos().map((m) => m.audio_path).filter(Boolean);
+  return visibleRows().filter(selectableRow).map((r) => r.uid).filter(Boolean);
+}
+
+function currentSelectionSet() {
+  return state.view === "voice" ? voiceSelectedSet() : state.selected;
+}
+
+function allVisibleSelected() {
+  const keys = visibleSelectionKeys();
+  const selected = currentSelectionSet();
+  return keys.length > 0 && keys.every((k) => selected.has(k));
+}
+
+function renderBulkSelectVisible() {
+  const btn = $("bulk-select-visible");
+  const all = allVisibleSelected();
+  btn.disabled = visibleSelectionKeys().length === 0;
+  btn.replaceChildren(icon(all ? "x" : "check"), el("span", { text: all ? "Deselect all" : "Select all" }));
+}
+
+function toggleVisibleSelection() {
+  const selected = currentSelectionSet();
+  const keys = visibleSelectionKeys();
+  if (keys.length === 0) return;
+  if (keys.every((k) => selected.has(k))) selected.clear();
+  else for (const k of keys) selected.add(k);
+  if (state.view === "voice") renderVoice();
+  else render();
 }
 
 function renderStatus(rows) {
@@ -2566,12 +2705,38 @@ function toast(msg, isErr = false) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => (t.hidden = true), 3800);
 }
-function showScan(text) {
+
+let scanTimer;
+function elapsedText(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = String(total % 60).padStart(2, "0");
+  return `${m}:${s}`;
+}
+function showScan(text, opts = {}) {
+  clearInterval(scanTimer);
+  scanTimer = null;
   $("scan-text").textContent = text || "";
+  const elapsed = $("scan-elapsed");
+  elapsed.hidden = !opts.elapsed;
+  elapsed.textContent = "0:00";
+  const sub = $("scan-subtext");
+  sub.hidden = !opts.detail;
+  sub.textContent = opts.detail || "";
+  $("scan").classList.toggle("is-timed", !!opts.elapsed);
+  if (opts.elapsed) {
+    const started = Date.now();
+    scanTimer = setInterval(() => { elapsed.textContent = elapsedText(Date.now() - started); }, 1000);
+  }
   $("refresh-btn").classList.add("refreshing");
   $("scan").hidden = false;
 }
-function hideScan() { $("scan").hidden = true; $("refresh-btn").classList.remove("refreshing"); }
+function hideScan() {
+  clearInterval(scanTimer);
+  scanTimer = null;
+  $("scan").hidden = true;
+  $("refresh-btn").classList.remove("refreshing");
+}
 
 function segActive(groupId, btn) {
   for (const b of $(groupId).querySelectorAll(".seg-btn")) {
@@ -2638,7 +2803,15 @@ function isTypingTarget(target) {
   return target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
+function clampDocumentScroll() {
+  const doc = document.scrollingElement || document.documentElement;
+  if (doc && doc.scrollTop) doc.scrollTop = 0;
+}
+
 window.addEventListener("DOMContentLoaded", () => {
+  // Top-nav focus can scroll the document and unpin the footer; app scrolling lives in `.scroll`.
+  window.addEventListener("scroll", clampDocumentScroll, { capture: true, passive: true });
+  clampDocumentScroll();
   document.querySelectorAll("[data-icon]").forEach((e) => setIcon(e, e.dataset.icon));
   initTheme();
   $("view-nav").addEventListener("click", (e) => {
@@ -2698,6 +2871,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("anchor-btn").addEventListener("click", (e) => { e.stopPropagation(); toggleAnchorPop(); });
   document.addEventListener("click", (e) => {   // click outside the picker closes it
     if (_anchorPopOpen && !e.target.closest(".anchor-wrap")) closeAnchorPop(true);
+    if (!e.target.closest(".voice-more")) closeVoiceMenus();
   });
   $("add-route-btn").addEventListener("click", () => $("route-file").click());
   $("route-file").addEventListener("change", onRoutePicked);
@@ -2706,6 +2880,7 @@ window.addEventListener("DOMContentLoaded", () => {
   $("bulk-remove").addEventListener("click", () => state.view === "voice" ? bulkArchiveVoice() : bulkRemove());
   $("bulk-voice-unarchive").addEventListener("click", bulkUnarchiveVoice);
   $("bulk-delete-connect").addEventListener("click", () => state.view === "voice" ? bulkDeleteVoice() : bulkDeleteConnect());
+  $("bulk-select-visible").addEventListener("click", toggleVisibleSelection);
   $("bulk-clear").addEventListener("click", clearBulkSelection);
   $("stale-review").addEventListener("click", reviewStale);
   $("stale-dismiss").addEventListener("click", () => { state.staleDismissed = true; renderStaleBanner(); });
