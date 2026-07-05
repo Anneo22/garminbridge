@@ -188,6 +188,7 @@ button { font-family: inherit; color: inherit; }
 .row-rename:hover { opacity: 1; color: var(--accent); background: var(--surface-2); }
 .row-rename .ico { font-size: 15px; }
 .row-rename[disabled] { display: none; }
+.row-step-view:active { transform: translateY(1px); }
 .row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 2px; }
 .row-tags-btn { border: none; background: transparent; color: var(--ink-3); cursor: pointer;
   display: inline-flex; padding: 4px 6px; border-radius: 7px; opacity: 0;
@@ -700,6 +701,7 @@ button { font-family: inherit; color: inherit; }
 .wo-recover { border-left-color: var(--line-2); }
 .wo-cooldown { border-left-color: #1f9d55; }
 .wo-strength { border-left-color: var(--accent-pop); }
+.modal-list > .wo-step, .modal-list > .wo-group { margin-top: 7px; }
 .author-date-wrap { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3);
   padding-left: 9px; border-left: 2px solid var(--accent-2); }
 .author-date-label { font-family: var(--mono); font-size: 11px; letter-spacing: .02em; color: var(--accent-2-text); }

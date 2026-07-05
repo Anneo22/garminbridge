@@ -189,6 +189,24 @@
     auto_import_paused: false,
   });
 
+  const workoutGet = () => ({
+    ok: true,
+    name: "Tempo intervals",
+    sport: "running",
+    spec: {
+      name: "Tempo intervals",
+      sport: "running",
+      steps: [
+        { warmup: 600, hr: [120, 140] },
+        { repeat: 4, do: [
+          { work: 300, power_pct: [95, 105] },
+          { recover: 120, hr: [120, 140] },
+        ] },
+        { cooldown: 300 },
+      ],
+    },
+  });
+
   const voiceList = () => ({
     ok: true,
     root: "/Users/example/GarminBridge/Voice Memos",
@@ -272,6 +290,8 @@
         return { ok: true, count: 0, changes: [], watch_name_max: 32 };
       case "workout-settings-get":
         return { ok: true, provider: "openai", model: "", has_key: false, openai_auth: "key", openai_oauth_connected: false };
+      case "workout-get":
+        return workoutGet();
       default:
         return { ok: true };
     }

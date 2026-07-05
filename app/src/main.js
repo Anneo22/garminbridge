@@ -2271,6 +2271,36 @@ function routeTagsButton(r) {
   return b;
 }
 
+function workoutStepsButton(r) {
+  const b = el("button", { class: "row-rename row-step-view", title: "View steps", "aria-label": "View steps for " + (r.name || "workout") },
+    [icon("file-text")]);
+  b.addEventListener("click", () => openWorkoutSteps(r));
+  return b;
+}
+
+async function openWorkoutSteps(r) {
+  showScan("Loading workout");
+  let res;
+  try {
+    res = await engine(["workout-get", "--id", String(r.id)]);
+  } catch (e) {
+    hideScan();
+    return toast((e.payload && (e.payload.message || e.payload.output)) || e.message || "Could not load this workout.", true);
+  }
+  hideScan();
+  if (!res || !res.ok) return toast((res && res.message) || "Could not load this workout.", true);
+
+  const spec = { ...(res.spec || {}), name: res.name || (res.spec && res.spec.name) || r.name || "" };
+  const host = el("div");
+  renderSpecCards(spec, host);
+  openModal({
+    title: res.name || r.name || "Workout",
+    lead: res.sport ? titleCase(res.sport) : "",
+    list: [...host.children],
+    hideConfirm: true,
+  });
+}
+
 function rowNode(r) {
   const selected = state.selected.has(r.uid);
   const check = el("input", { type: "checkbox", class: "row-check" });
@@ -2298,6 +2328,7 @@ function rowNode(r) {
   if (stale) titleLine.push(el("span", { class: "row-flag", title: r.location_detail, text: "Stale route" }));
   const actions = [];
   if (r.kind === "course") actions.push(routeTagsButton(r));
+  if (r.kind === "workout" && r.id) actions.push(workoutStepsButton(r));
   actions.push(renameBtn);
 
   const row = el("div", { class: "row" + (selected ? " is-selected" : "") }, [
