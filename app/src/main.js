@@ -18,7 +18,7 @@ const state = {
   snap: null,
   voice: { loaded: false, root: "", vault_configured: false, items: [], showArchived: false, selected: new Set() },
   settings: { loaded: false, data: null, installing: "", focus: "" },
-  filters: { loc: "on-watch", kind: "all", sport: "", search: "" },
+  filters: { loc: "on-watch", kind: "all", sport: "", tag: "", folder: "", search: "" },
   selected: new Set(),
   staleDismissed: false,
   thumbs: {},              // course id -> {vb,d} filled lazily from Connect geoPoints
@@ -501,12 +501,22 @@ function renderSkeleton() {
   }
 }
 
-function populateSports() {
-  const sel = $("filter-sport");
+function populateSelect(id, allText, values, label = (x) => x) {
+  const sel = $(id);
   const cur = sel.value;
-  sel.replaceChildren(el("option", { value: "", text: "All sports" }));
-  for (const s of state.snap.sports) sel.appendChild(el("option", { value: s, text: prettySport(s) }));
-  sel.value = cur && state.snap.sports.includes(cur) ? cur : "";
+  const items = values || [];
+  sel.replaceChildren(el("option", { value: "", text: allText }));
+  for (const item of items) sel.appendChild(el("option", { value: item, text: label(item) }));
+  sel.value = cur && items.includes(cur) ? cur : "";
+  return sel.value;
+}
+
+function populateSports() {
+  state.filters.sport = populateSelect("filter-sport", "All sports", state.snap.sports || [], prettySport);
+  state.filters.tag = populateSelect("filter-tag", "All tags", state.snap.tags || []);
+  state.filters.folder = populateSelect("filter-folder", "All folders", state.snap.folders || []);
+  $("filter-tag").hidden = !(state.snap.tags || []).length;
+  $("filter-folder").hidden = !(state.snap.folders || []).length;
 }
 
 function visibleRows() {
@@ -514,7 +524,13 @@ function visibleRows() {
   return state.snap.items.filter((r) => {
     if (f.kind !== "all" && r.kind !== f.kind) return false;
     if (f.sport && r.sport !== f.sport) return false;
-    if (f.search && !(r.name || "").toLowerCase().includes(f.search.toLowerCase())) return false;
+    if (f.tag && !(r.kind === "course" && (r.tags || []).includes(f.tag))) return false;
+    if (f.folder && !(r.kind === "course" && r.route_folder === f.folder)) return false;
+    if (f.search) {
+      const q = f.search.toLowerCase();
+      const tagHit = (r.tags || []).some((t) => t.toLowerCase().includes(q));
+      if (!(r.name || "").toLowerCase().includes(q) && !tagHit) return false;
+    }
     // Start-place filter (routes only): keep courses whose start is within the radius of the
     // anchor. A route with no known start yet (thumb still loading) is hidden while filtering,
     // since we can't confirm it's near — it reappears once its trace fills in.
@@ -819,7 +835,10 @@ function emptyState(title, sub) {
 function resetSearchSilently() {
   const s = $("search");
   if (s) s.value = "";
+  for (const id of ["filter-tag", "filter-folder"]) if ($(id)) $(id).value = "";
   state.filters.search = "";
+  state.filters.tag = "";
+  state.filters.folder = "";
 }
 
 function showView(view) {
@@ -2213,7 +2232,7 @@ function placesVisible() {
   if (!loc || !loc.points || !loc.points.length) return [];
   if (f.kind !== "all" && f.kind !== "location") return [];
   // places aren't in Connect and have no sport; hide them where those filters are the point
-  if (f.kind === "all" && (f.loc === "connect-only" || f.loc === "watch-only" || f.sport)) return [];
+  if (f.kind === "all" && (f.loc === "connect-only" || f.loc === "watch-only" || f.sport || f.tag || f.folder)) return [];
   const q = (f.search || "").toLowerCase();
   return loc.points.filter((p) => !q || (p.name || "").toLowerCase().includes(q));
 }
@@ -2231,6 +2250,25 @@ function placeRow(p) {
     ]),
     el("div", { class: "place-actions" }, [rename, del]),
   ]);
+}
+
+function routeTagChips(r) {
+  if (r.kind !== "course") return null;
+  const chips = [];
+  if (r.route_folder) chips.push(el("span", { class: "row-flag row-tag-chip row-folder-chip", title: "Route folder", text: r.route_folder }));
+  for (const tag of r.tags || []) chips.push(el("span", { class: "row-flag row-tag-chip", title: "Route tag", text: tag }));
+  return chips.length ? el("div", { class: "row-tags-line" }, chips) : null;
+}
+
+function routeTagsButton(r) {
+  const b = el("button", { class: "row-tags-btn", title: "Edit route tags", "aria-label": "Edit tags for " + (r.name || "") },
+    [el("span", { text: "Tags" })]);
+  if (r.tag_key) b.addEventListener("click", () => openRouteTags(r));
+  else {
+    b.disabled = true;
+    b.title = "Tags need a Mac route library FIT backup.";
+  }
+  return b;
 }
 
 function rowNode(r) {
@@ -2258,16 +2296,21 @@ function rowNode(r) {
   const stale = r.stale === "orphan";
   const titleLine = [highlightedText(r.name || "Unnamed", state.filters.search, "row-name")];
   if (stale) titleLine.push(el("span", { class: "row-flag", title: r.location_detail, text: "Stale route" }));
+  const actions = [];
+  if (r.kind === "course") actions.push(routeTagsButton(r));
+  actions.push(renameBtn);
+
   const row = el("div", { class: "row" + (selected ? " is-selected" : "") }, [
     check,
     identityNode(r),
     el("div", { class: "row-main" }, [
       el("div", { class: "row-title-line" }, titleLine),
       metaNode(r),
+      routeTagChips(r),
       conditionsRow(r),
     ]),
     el("div", { class: "badges" }, [connectBadge, watchBadge]),
-    renameBtn,
+    el("div", { class: "row-actions" }, actions),
   ]);
   return row;
 }
@@ -2685,6 +2728,49 @@ async function reviewStale() {
   openConfirm(pv, [["apply", "clean-watch", "course", {}]]);
 }
 
+// ---- route tags (Mac-side sidecar only) ----
+function openRouteTags(r) {
+  if (!r.tag_key) return;
+  const tagsInput = el("input", { class: "rename-input", type: "text",
+    value: (r.tags || []).join(", "), spellcheck: "false", "aria-label": "Tags" });
+  const folderInput = el("input", { class: "rename-input", type: "text",
+    value: r.route_folder || "", spellcheck: "false", "aria-label": "Folder" });
+  const note = el("div", { class: "rename-note",
+    text: "Saved on this Mac only. Does not change Garmin Connect or your Fenix." });
+  openModal({
+    title: "Tags for route",
+    lead: "Stored against the Mac route library file.",
+    list: [el("li", { class: "rename-li" }, [
+      el("label", { class: "import-field" }, [el("span", { text: "Tags" }), tagsInput]),
+      el("label", { class: "import-field" }, [el("span", { text: "Folder" }), folderInput]),
+      note,
+    ])],
+    confirmLabel: "Save", confirmDanger: false, blocked: false,
+    onConfirm: () => saveRouteTags(r, tagsInput.value, folderInput.value),
+  });
+  const onEnter = (e) => { if (e.key === "Enter") saveRouteTags(r, tagsInput.value, folderInput.value); };
+  tagsInput.addEventListener("keydown", onEnter);
+  folderInput.addEventListener("keydown", onEnter);
+  setTimeout(() => { tagsInput.focus(); tagsInput.select(); }, 30);
+}
+
+async function saveRouteTags(r, tagsCsv, folder) {
+  if (!r.tag_key) return;
+  closeModal();
+  showScan("Saving tags");
+  try {
+    await engine(["route-tags-set", "--key", r.tag_key, "--tags", tagsCsv, "--folder", folder]);
+    state.snap = await engine(["snapshot"]);
+    populateSports();
+    render();
+    hideScan();
+    toast("Tags saved.");
+  } catch (e) {
+    hideScan();
+    toast(e.message || "Could not save tags.", true);
+  }
+}
+
 // ---- rename (propagates to Connect + watch) ----
 const utf8len = (s) => new TextEncoder().encode(s).length;
 
@@ -3033,6 +3119,8 @@ window.addEventListener("DOMContentLoaded", () => {
     state.filters.kind = b.dataset.kind; segActive("filter-kind", b); render();
   });
   $("filter-sport").addEventListener("change", (e) => { state.filters.sport = e.target.value; render(); });
+  $("filter-tag").addEventListener("change", (e) => { state.filters.tag = e.target.value; render(); });
+  $("filter-folder").addEventListener("change", (e) => { state.filters.folder = e.target.value; render(); });
   $("wind-when").addEventListener("change", (e) => setWindSlot(e.target.value));
   // route controls: sort + area filter + add route
   $("route-sort").addEventListener("change", (e) => {

@@ -21,6 +21,11 @@
     slon: -0.1278,
     created: 1782835200,
   };
+  const routeTags = {
+    "SURREYHI.FIT": { tags: ["gravel", "long"], folder: "Races" },
+    "RIVERRECOVERY.fit": { tags: ["recovery"], folder: "Training" },
+    "LOCALRT.FIT": { tags: ["library"], folder: "" },
+  };
 
   function actions(row) {
     return {
@@ -47,7 +52,7 @@
       ...row,
     };
     const label = labels[out.state] || labels.synced;
-    return {
+    const base = {
       uid: out.id ? `${out.kind}:${out.id}` : `${out.kind}:w:${out.watch_file}`,
       location_label: label[0],
       location_detail: label[1],
@@ -55,6 +60,18 @@
       actions: actions(out),
       ...out,
     };
+    if (base.kind === "course") {
+      const tagKey = base.tag_key || "";
+      const saved = routeTags[tagKey] || {};
+      base.tag_key = tagKey;
+      base.tags = saved.tags || base.tags || [];
+      base.route_folder = saved.folder || base.route_folder || "";
+    } else {
+      base.tags = [];
+      base.route_folder = "";
+      base.tag_key = "";
+    }
+    return base;
   }
 
   const snapshot = () => ({
@@ -66,6 +83,8 @@
       course: { synced: 1, "connect-only": 1, "watch-only": 1, scheduled: 0 },
     },
     sports: ["cycling", "running", "strength_training"],
+    tags: ["gravel", "library", "long", "recovery"],
+    folders: ["Races", "Training"],
     stale_routes: { orphans: [], orphan_count: 0, needs_manifest_count: 0, last_checked: daysAgo(2), last_orphan_count: 0 },
     locations: {
       source: "mac-backup",
@@ -108,6 +127,7 @@
         watch_idx: 1,
         state: "synced",
         thumb: courseThumb,
+        tag_key: "SURREYHI.FIT",
       }),
       item({
         kind: "course",
@@ -120,6 +140,7 @@
         watch_idx: null,
         state: "connect-only",
         thumb: { ...courseThumb, dist_m: 18420, asc_m: 110, desc_m: 108, bearing: 84, compass: "E", created: 1782662400 },
+        tag_key: "RIVERRECOVERY.fit",
       }),
       item({
         kind: "course",
@@ -133,6 +154,7 @@
         state: "watch-only",
         imported: true,
         thumb: { ...courseThumb, dist_m: 11600, asc_m: 85, desc_m: 90, bearing: 180, compass: "S", created: 1782576000 },
+        tag_key: "LOCALRT.FIT",
       }),
     ],
   });
@@ -240,6 +262,8 @@
         return { ok: true, wind: {} };
       case "route-wind":
         return { ok: true, wind: null };
+      case "route-tags-set":
+        return { ok: true, message: "Tags saved." };
       case "geocode":
         return { ok: true, query: args[2] || "", results: [{ label: "Richmond Park, London", lat: 51.4426, lon: -0.2739 }] };
       case "here":
