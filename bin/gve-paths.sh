@@ -33,3 +33,47 @@ gve_resolve_paths(){
   elif [ -n "$base" ];                    then GVE_SET_DEST="$base/Settings"
   else                                         GVE_SET_DEST="$HOME/Documents/Garmin Settings"; fi
 }
+
+gve_pause_flag(){
+  printf '%s\n' "${GVE_PAUSE_FLAG:-${PAUSE_FLAG:-$HOME/.config/garmin-voice-export/paused}}"
+}
+
+gve_pause_deadline_epoch(){
+  local clean iso main tz
+  clean="$(printf '%s' "${1:-}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [ -n "$clean" ] || return 1
+  case "$clean" in
+    *[!0-9]*) ;;
+    *) printf '%s\n' "$clean"; return 0 ;;
+  esac
+  iso="$clean"
+  case "$iso" in *Z) iso="${iso%Z}+0000" ;; esac
+  case "$iso" in *[+-][0-9][0-9]:[0-9][0-9]) iso="${iso%:*}${iso##*:}" ;; esac
+  if [[ "$iso" =~ ^(.*)([+-][0-9][0-9][0-9][0-9])$ ]]; then
+    main="${BASH_REMATCH[1]}"; tz="${BASH_REMATCH[2]}"
+  else
+    main="$iso"; tz=""
+  fi
+  main="${main%%.*}"
+  if [ -n "$tz" ]; then
+    date -j -f "%Y-%m-%dT%H:%M:%S%z" "${main}${tz}" "+%s" 2>/dev/null
+  else
+    date -j -f "%Y-%m-%dT%H:%M:%S" "$main" "+%s" 2>/dev/null ||
+      date -j -f "%Y-%m-%d %H:%M:%S" "$main" "+%s" 2>/dev/null
+  fi
+}
+
+is_paused(){
+  local flag raw trimmed deadline now
+  flag="$(gve_pause_flag)"
+  [ -f "$flag" ] || return 1
+  raw="$(cat "$flag" 2>/dev/null || true)"
+  trimmed="$(printf '%s' "$raw" | tr -d '[:space:]')"
+  [ -n "$trimmed" ] || return 0
+  deadline="$(gve_pause_deadline_epoch "$trimmed" 2>/dev/null || true)"
+  case "$deadline" in ""|*[!0-9]*) return 0 ;; esac
+  now="$(date +%s)"
+  [ "$now" -lt "$deadline" ] && return 0
+  rm -f "$flag"
+  return 1
+}

@@ -187,6 +187,7 @@
     archived_retention: { days: "90", auto: false },
     archived_audio: { count: 1, bytes: 1843200 },
     auto_import_paused: false,
+    auto_import_resume_at: "",
   });
 
   const workoutGet = () => ({

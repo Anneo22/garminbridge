@@ -133,7 +133,7 @@ backup_with_retry(){ local try=1 rc=1
 
 ptp_suppress_start
 if [ "$MODE" = "auto" ]; then
-  [ -f "$PAUSE_FLAG" ] && exit 0
+  is_paused && exit 0
   present || exit 0
   log "=== auto settings backup ==="
 else

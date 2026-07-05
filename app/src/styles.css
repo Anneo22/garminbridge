@@ -66,20 +66,24 @@ button { font-family: inherit; color: inherit; }
 
 /* ---------- masthead ---------- */
 .masthead { border-bottom: 1px solid var(--line); background: var(--surface); -webkit-app-region: drag; }
-.masthead .wrap { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: nowrap;
+.masthead .wrap { display: flex; align-items: center; justify-content: flex-start; gap: 10px 12px; flex-wrap: wrap;
   padding-top: 12px; padding-bottom: 12px; }
 .masthead button, .masthead .watch-pill { -webkit-app-region: no-drag; }
-.brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 0 1 auto; }
+.brand { order: 1; display: flex; align-items: center; gap: 12px; min-width: 0; max-width: 300px; flex: 1 1 190px; }
+.brand > div { min-width: 0; }
 .brand .logomark { width: 34px; height: 34px; color: var(--ink); flex: none; }
 .brand .logomark .node { fill: var(--accent-pop); }
 /* the halo is now a single continuous coral gradient (id nodeGlow, in the SVG), not stacked rings */
 .brand-title { font-family: var(--serif); font-weight: 600; font-size: 24px; letter-spacing: -.015em;
   line-height: 1.04; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand-sub { margin-top: 3px; }
-.topbar-right { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: nowrap;
-  margin-left: 0; min-width: 0; flex: 0 1 auto; }
-.view-nav { margin-left: 12px; margin-right: 0; flex: 0 0 auto; -webkit-app-region: no-drag; }
-.masthead-search { flex: 1 1 120px; min-width: 0; max-width: 280px; -webkit-app-region: no-drag; }
+.topbar-right { order: 4; display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap;
+  margin-left: 0; min-width: 0; flex: 1 1 430px; }
+.topbar-right .btn, .topbar-right .theme-wrap, .topbar-right .watch-pill { flex: 0 0 auto; }
+.topbar-right .btn { white-space: nowrap; }
+.view-nav { order: 2; margin-left: 0; margin-right: 0; flex: 0 1 auto; max-width: 100%;
+  flex-wrap: wrap; -webkit-app-region: no-drag; }
+.masthead-search { order: 3; flex: 1 1 180px; min-width: 150px; max-width: 280px; -webkit-app-region: no-drag; }
 .theme-wrap { display: inline-flex; align-items: center; gap: 5px; }
 .theme-wrap .ico { font-size: 15px; color: var(--ink-3); flex: none; }
 .theme-select { max-width: 92px; padding: 6px 8px; }
@@ -135,6 +139,11 @@ button { font-family: inherit; color: inherit; }
 .toolbar { border-bottom: 1px solid var(--line); background: var(--surface); }
 .toolbar .wrap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding-top: 12px; padding-bottom: 12px; }
+#content-toolbar .wrap { align-items: center; gap: 8px 10px; }
+#content-toolbar .seg { flex: 0 1 auto; flex-wrap: wrap; max-width: 100%; min-width: 0; }
+#content-toolbar .sport-select { flex: 0 1 auto; max-width: 100%; min-width: 0; }
+#content-toolbar .wind-wrap { flex: 0 1 auto; max-width: 100%; min-width: 0; }
+#content-toolbar .wind-select { max-width: 180px; min-width: 0; }
 .search-wrap { position: relative; flex: 1 1 200px; min-width: 160px; display: flex; align-items: center; }
 .search-wrap .ico { position: absolute; left: 11px; font-size: 15px; color: var(--ink-3); pointer-events: none; }
 .search { width: 100%; padding: 8px 12px 8px 33px; border: 1px solid var(--line-2); border-radius: var(--r);
@@ -794,7 +803,7 @@ button { font-family: inherit; color: inherit; }
 
 @media (max-width: 760px) {
   .wrap { padding-left: 18px; padding-right: 18px; }
-  .masthead .wrap { align-items: flex-start; flex-wrap: wrap; }
+  .masthead .wrap { align-items: center; flex-wrap: wrap; }
   .view-nav { margin-left: 0; margin-right: 0; }
   .masthead-search { flex-basis: 100%; max-width: none; order: 3; }
   .topbar-right { width: 100%; margin-left: 0; justify-content: flex-start; }

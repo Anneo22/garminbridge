@@ -960,7 +960,7 @@ function renderSettings() {
     settingsSection("archived-cleanup", "Archived audio cleanup", "Free Mac storage", "Deletes only archived .wav audio older than the age you choose. Transcripts stay, and active memos and notes are never touched.", [
       renderArchivedCleanupSettings(d),
     ]),
-    settingsSection("auto-import", "Auto-import", "Free the watch", "Pause background imports when another app needs the watch's USB connection. Resume when GarminBridge should take over again.", [
+    settingsSection("auto-import", "Auto-import", "USB ownership", "Controls whether GarminBridge takes the watch's USB connection automatically when you plug it in.", [
       renderAutoImportSettings(d),
     ]),
   ]));
@@ -972,16 +972,31 @@ function renderSettingsPill(d) {
   const pill = $("watch-pill"), txt = $("watch-pill-text");
   pill.classList.remove("is-live", "is-cache", "is-none");
   const paused = !!d.auto_import_paused;
+  const resumeAt = autoImportResumeClock(d);
   pill.classList.add(paused ? "is-cache" : "is-live");
-  txt.textContent = paused ? "Auto-import paused" : "Auto-import active";
+  txt.textContent = paused ? (resumeAt ? `Paused until ${resumeAt}` : "Auto-import paused") : "Auto-import active";
 }
 
 function renderSettingsStatus(d) {
   const t = d.transcription || {};
   const c = d.cleanup || {};
+  const resumeAt = autoImportResumeClock(d);
   $("status-counts").textContent =
     `Settings: transcription ${t.enabled ? "on" : "off"} · cleanup ${c.enabled ? "on" : "off"} · watch delete ${d.delete_mode || "keep"}`;
-  $("status-updated").textContent = d.auto_import_paused ? "Watch is free for other apps" : "Auto-import is active";
+  $("status-updated").textContent = d.auto_import_paused
+    ? (resumeAt ? `Watch USB is free until ${resumeAt}` : "Watch USB is free for other apps")
+    : "Auto-import is active";
+}
+
+function autoImportResumeEpoch(d) {
+  const n = Number(d && d.auto_import_resume_at);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function autoImportResumeClock(d) {
+  const epoch = autoImportResumeEpoch(d);
+  if (!epoch) return "";
+  return new Date(epoch * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 function settingsTopbar() {
@@ -1040,6 +1055,7 @@ async function saveSetting(key, value, opts = {}) {
     const args = ["settings-set", key];
     if (opts.unset) args.push("--unset");
     else args.push(String(value));
+    if (opts.extraArgs) args.push(...opts.extraArgs.map(String));
     const d = await engine(args);
     setSettingsState(d);
     hideScan();
@@ -1385,12 +1401,44 @@ async function applyArchivedCleanup(days) {
 }
 
 function renderAutoImportSettings(d) {
-  return el("div", { class: "settings-grid" }, [
-    settingSwitch("Pause auto-import", "Keeps GarminBridge from grabbing the watch automatically, so Garmin Express or an MTP app can use it.", !!d.auto_import_paused,
-      (paused) => saveSetting("auto-import", paused ? "paused" : "active",
-        { scan: paused ? "Pausing auto-import" : "Resuming auto-import",
-          toast: paused ? "Auto-import paused. The watch is free for other apps." : "Auto-import resumed." })),
+  const paused = !!d.auto_import_paused;
+  const resumeAt = autoImportResumeClock(d);
+  const duration = el("select", { class: "sport-select setting-select auto-import-duration", "aria-label": "Auto-import pause duration" }, [
+    el("option", { value: "0", text: "until I turn it back on" }),
+    el("option", { value: "60", text: "1 hour" }),
+    el("option", { value: "120", text: "2 hours" }),
+    el("option", { value: "240", text: "4 hours" }),
   ]);
+  const rows = [
+    settingNote("GarminBridge's background watcher grabs the Fenix's USB connection the moment it is plugged in, so it can auto-import voice memos and back up the watch. While it holds USB, Garmin Express and MTP file managers cannot reach the watch. Turn Auto-import off to free USB for those apps, then turn it back on here."),
+    settingSwitch("Auto-import", "On means GarminBridge imports and backs up automatically. Off frees the watch USB connection for other apps.", !paused,
+      (on) => on ? saveSetting("auto-import", "active",
+        { scan: "Resuming auto-import", toast: "Auto-import resumed." }) : pauseAutoImport(duration.value)),
+  ];
+  if (!paused) {
+    rows.push(settingField("Pause for", duration, "Used when you turn Auto-import off."));
+  } else {
+    rows.push(el("div", { class: "setting-action-row auto-import-status" }, [
+      settingNote(resumeAt ? `Auto-import paused until ${resumeAt}.` : "Auto-import paused until you turn it back on."),
+      el("button", { class: "btn btn-outline", onclick: () => saveSetting("auto-import", "active",
+        { scan: "Resuming auto-import", toast: "Auto-import resumed." }) },
+        [icon("refresh"), el("span", { text: "Resume now" })]),
+    ]));
+  }
+  return el("div", { class: "settings-grid" }, [
+    ...rows,
+  ]);
+}
+
+function pauseAutoImport(minutesValue) {
+  const minutes = Number(minutesValue || 0);
+  const timed = Number.isFinite(minutes) && minutes > 0;
+  const label = minutes === 60 ? "1 hour" : minutes === 120 ? "2 hours" : minutes === 240 ? "4 hours" : "";
+  return saveSetting("auto-import", "paused", {
+    scan: "Pausing auto-import",
+    extraArgs: timed ? ["--minutes", String(minutes)] : [],
+    toast: timed ? `Auto-import paused for ${label}.` : "Auto-import paused. The watch USB connection is free for other apps.",
+  });
 }
 
 function voiceDisplayTime(iso) {

@@ -454,7 +454,7 @@ ptp_suppress_start   # hold PTPCamera off the watch for the whole run (detect + 
 if [ "$MODE" = "auto" ]; then
   # Triggered by the on-connect watcher (once per attach). Respect the pause switch;
   # no marker bookkeeping needed since it's event-driven, not polled.
-  [ -f "$PAUSE_FLAG" ] && exit 0          # paused: leave the watch free for Garmin Express / MTP apps
+  is_paused && exit 0                     # paused: leave the watch free for Garmin Express / MTP apps
   if present; then
     sync_with_retry; rc=$?
     prune_local_audio

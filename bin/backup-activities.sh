@@ -100,7 +100,7 @@ backup_with_retry(){ local try=1 rc=1
   done; return "$rc"; }
 
 if [ "$MODE" = "auto" ]; then
-  [ -f "$PAUSE_FLAG" ] && exit 0          # paused: leave the watch free for other apps
+  is_paused && exit 0                     # paused: leave the watch free for other apps
   present || exit 0                        # fired but no readable watch
   backup_with_retry; rc=$?
 else

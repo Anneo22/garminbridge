@@ -5,8 +5,10 @@
 #   garminbridge voice        import voice notes now (alias: sync). Passes flags like --delete.
 #   garminbridge activities   back up activity .fit files now (copy-only).
 #   garminbridge settings     back up settings + sport profiles now (copy-only; for restoring a new watch).
-#   garminbridge pause        turn auto-import OFF and release the watch (for Garmin
-#                             Express, OpenMTP, etc.). Survives reconnects until 'resume'.
+#   garminbridge pause [--minutes N]
+#                             turn auto-import OFF and release the watch (for Garmin
+#                             Express, OpenMTP, etc.). Survives reconnects until 'resume',
+#                             unless a minute duration is provided.
 #   garminbridge resume       turn auto-import back ON.
 #   garminbridge free         release the watch from this tool and macOS PTPCamera right now
 #                             (one-shot). Use when "the Mac won't see the watch", then open your app.
@@ -72,9 +74,28 @@ migrate_one(){ local src="$1" dst="$2" lbl="$3" f bn n=0
 
 case "${1:-status}" in
   pause|off|stop)
-    touch "$PAUSE_FLAG"; free_device
-    echo "⏸  Auto-import PAUSED and the watch released."
-    echo "   It stays free across reconnects — Garmin Express / OpenMTP / MTP tools will see it."
+    shift
+    pause_minutes=0
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --minutes)
+          pause_minutes="${2:-}"; shift 2 ;;
+        --minutes=*)
+          pause_minutes="${1#--minutes=}"; shift ;;
+        *)
+          echo "usage: garminbridge pause [--minutes N]" >&2; exit 2 ;;
+      esac
+    done
+    case "$pause_minutes" in ""|*[!0-9]*) echo "pause minutes must be a whole number" >&2; exit 2 ;; esac
+    if [ "$pause_minutes" -gt 0 ]; then
+      printf '%s\n' "$(( $(date +%s) + pause_minutes * 60 ))" > "$PAUSE_FLAG"
+      echo "⏸  Auto-import PAUSED for $pause_minutes minute(s), and the watch released."
+    else
+      : > "$PAUSE_FLAG"
+      echo "⏸  Auto-import PAUSED and the watch released."
+    fi
+    free_device
+    echo "   It stays free across reconnects. Garmin Express / OpenMTP / MTP tools will see it."
     echo "   Re-enable with:  garmin-voice resume" ;;
   resume|on|start)
     rm -f "$PAUSE_FLAG"
@@ -113,7 +134,7 @@ case "${1:-status}" in
     echo "Done." ;;
   status)
     echo "GarminBridge status"
-    echo "  auto-import : $([ -f "$PAUSE_FLAG" ] && echo 'PAUSED' || echo 'active')"
+    echo "  auto-import : $(is_paused && echo 'PAUSED' || echo 'active')"
     if launchctl print "gui/$UID_NUM/$LABEL" >/dev/null 2>&1; then echo "  watcher     : installed (instant on-connect)"; else echo "  watcher     : not installed (run bin/install-autorun.sh)"; fi
     echo "  destination : $DEST"
     echo "  output root : ${GARMIN_BRIDGE_ROOT:-legacy ~/Documents layout}${GARMIN_BRIDGE_DEVICE:+  (device: $GARMIN_BRIDGE_DEVICE)}"
