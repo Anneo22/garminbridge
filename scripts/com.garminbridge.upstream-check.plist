@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Daily upstream check. Template: not installed by anything in this repo. The two
+  REPLACE-ME paths below are absolute because a LaunchAgent does not expand ~ or
+  $HOME, so fill them in by hand and re-point them if the checkout ever moves (the
+  same hazard the other GarminBridge LaunchAgents carry).
+
+  Install:
+    cp scripts/com.garminbridge.upstream-check.plist ~/Library/LaunchAgents/
+    # then edit the two REPLACE-ME paths in the copy
+    launchctl load ~/Library/LaunchAgents/com.garminbridge.upstream-check.plist
+
+  Daily rather than weekly because the whole point is a short gap between Garmin
+  breaking authentication and knowing about it; the run costs three small HTTP
+  requests and notifies only once per new version.
+
+  /usr/bin/python3 by name rather than the shebang: a LaunchAgent gets a minimal
+  environment, and the check is stdlib-only, so it needs no venv and no PATH.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.garminbridge.upstream-check</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>REPLACE-ME/ABSOLUTE/PATH/TO/garmin-voice-export/scripts/check_upstream.py</string>
+        <string>--notify</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>10</integer>
+        <key>Minute</key>
+        <integer>15</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>REPLACE-ME/ABSOLUTE/PATH/TO/Library/Logs/garminbridge-upstream-check.log</string>
+    <key>StandardErrorPath</key>
+    <string>REPLACE-ME/ABSOLUTE/PATH/TO/Library/Logs/garminbridge-upstream-check.log</string>
+</dict>
+</plist>

@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Resolve the saved appearance before the stylesheet applies, so there is no flash of the
+         wrong theme. "system" (the default) follows the OS; light/dark force it. -->
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem("gb-theme") || "system";
+          var dark = p === "dark" || (p === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+        } catch (e) { document.documentElement.setAttribute("data-theme", "light"); }
+      })();
+    </script>
+    <link rel="stylesheet" href="styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GarminBridge Content Manager</title>
+    <script src="mock.js"></script>
+    <script type="module" src="/main.js" defer></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="wrap">
+        <div class="brand">
+          <!-- GarminBridge mark: a clean bridge arch with the hot-coral crossing node, softly faded. -->
+          <svg class="logomark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+            <defs>
+              <radialGradient id="nodeGlow">
+                <stop offset="0" stop-color="#FD4E5A" stop-opacity="1" />
+                <stop offset="0.40" stop-color="#FD4E5A" stop-opacity="1" />
+                <stop offset="0.52" stop-color="#FD4E5A" stop-opacity="0.52" />
+                <stop offset="0.66" stop-color="#FD4E5A" stop-opacity="0.26" />
+                <stop offset="0.82" stop-color="#FD4E5A" stop-opacity="0.09" />
+                <stop offset="1" stop-color="#FD4E5A" stop-opacity="0" />
+              </radialGradient>
+            </defs>
+            <path d="M6 25 C6 12 10 8 16 8 C22 8 26 12 26 25" fill="none" stroke="currentColor"
+                  stroke-width="2.1" stroke-linecap="round" />
+            <circle class="node-glow" cx="16" cy="8" r="6.6" fill="url(#nodeGlow)" />
+            <circle class="node" cx="16" cy="8" r="2.9" />
+          </svg>
+          <div>
+            <div id="brand-title" class="brand-title">Content Manager</div>
+            <div class="brand-sub kicker">GarminBridge</div>
+          </div>
+        </div>
+        <nav id="view-nav" class="seg view-nav" aria-label="Main view">
+          <button class="seg-btn is-active" aria-pressed="true" data-view="content">Content</button>
+          <button class="seg-btn" aria-pressed="false" data-view="voice">Voice memos</button>
+          <button class="seg-btn" aria-pressed="false" data-view="health">Health</button>
+          <button class="seg-btn" aria-pressed="false" data-view="settings">Settings</button>
+        </nav>
+        <div class="search-wrap masthead-search">
+          <span class="ico" data-icon="search"></span>
+          <input id="search" class="search" type="search" placeholder="Search" />
+        </div>
+        <div class="topbar-right">
+          <div class="theme-wrap" title="Appearance">
+            <span id="theme-icon" class="ico" data-icon="theme-auto"></span>
+            <select id="theme-select" class="sport-select theme-select" aria-label="Appearance">
+              <option value="system">System</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+          <div id="watch-pill" class="watch-pill" title="Where the watch data comes from">
+            <span class="ico" data-icon="device-watch"></span>
+            <span class="wp-dot"></span><span id="watch-pill-text">Checking</span>
+          </div>
+          <button id="new-workout-btn" class="btn btn-primary" title="Create a workout and push it to your watch">
+            <span class="ico" data-icon="barbell"></span><span>New workout</span>
+          </button>
+          <button id="refresh-btn" class="btn btn-ghost" title="Re-scan the watch over USB (live)">
+            <span class="ico ico-spin" data-icon="refresh"></span><span>Refresh</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Stale-route reminder. Hidden when the watch is clean. -->
+    <div id="stale-banner" class="stale-banner" hidden>
+      <div class="wrap">
+        <span class="ico" data-icon="alert-triangle"></span>
+        <span id="stale-text"></span>
+        <button id="stale-review" class="btn btn-danger">Review and clean</button>
+        <button id="stale-dismiss" class="banner-x" title="Dismiss for now"><span class="ico" data-icon="x"></span></button>
+      </div>
+    </div>
+
+    <section id="content-toolbar" class="toolbar">
+      <div class="wrap">
+        <div class="seg" id="filter-loc" role="group" aria-label="Filter by where items live">
+          <button class="seg-btn is-active" aria-pressed="true" data-loc="on-watch">On my watch</button>
+          <button class="seg-btn" aria-pressed="false" data-loc="all">All</button>
+          <button class="seg-btn" aria-pressed="false" data-loc="connect-only">Connect only</button>
+          <button class="seg-btn" aria-pressed="false" data-loc="watch-only">Watch only</button>
+        </div>
+        <div class="seg" id="filter-kind" role="group" aria-label="Filter by kind">
+          <button class="seg-btn is-active" aria-pressed="true" data-kind="all">All</button>
+          <button class="seg-btn" aria-pressed="false" data-kind="workout">Workouts</button>
+          <button class="seg-btn" aria-pressed="false" data-kind="course">Routes</button>
+          <button class="seg-btn" aria-pressed="false" data-kind="location">Places</button>
+        </div>
+        <select id="filter-sport" class="sport-select" title="Filter by sport">
+          <option value="">All sports</option>
+        </select>
+        <select id="filter-tag" class="sport-select" title="Filter by route tag" hidden>
+          <option value="">All tags</option>
+        </select>
+        <select id="filter-folder" class="sport-select" title="Filter by route folder" hidden>
+          <option value="">All folders</option>
+        </select>
+        <div class="wind-wrap" title="Show the forecast weather and wind at each route for when you plan to ride, and whether the wind favours the ride home">
+          <span class="ico" data-icon="sun"></span>
+          <select id="wind-when" class="sport-select wind-select">
+            <option value="">Weather: off</option>
+            <option value="now">Now</option>
+            <option value="in3h">In 3 hours</option>
+            <option value="tomAM">Tomorrow morning</option>
+            <option value="tomPM">Tomorrow afternoon</option>
+            <option value="in2d">In 2 days</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section id="voice-toolbar" class="toolbar voice-toolbar" hidden>
+      <div class="wrap">
+        <button id="voice-import-btn" class="btn btn-primary" title="Import new voice memos from your Fenix">
+          <span class="ico" data-icon="microphone"></span><span>Import</span>
+        </button>
+        <button id="voice-notes-folder-btn" class="btn btn-outline" title="Choose where voice memo notes are written">
+          <span class="ico" data-icon="folder-open"></span><span>Set notes folder</span>
+        </button>
+        <div class="seg voice-archive-toggle" id="voice-archive-toggle" role="group" aria-label="Voice memo section">
+          <button class="seg-btn is-active" aria-pressed="true" data-archived="0">Active</button>
+          <button class="seg-btn" aria-pressed="false" data-archived="1">Archived</button>
+        </div>
+        <span class="voice-help">Import copies new memos from your Fenix. Send to notes creates an Obsidian note in the folder you choose.</span>
+        <span id="voice-root" class="voice-root"></span>
+      </div>
+    </section>
+
+    <section id="health-toolbar" class="toolbar health-toolbar" hidden>
+      <div class="wrap">
+        <div class="seg health-mode-switch" id="health-mode-switch" role="group" aria-label="Health view mode">
+          <button class="seg-btn is-active" aria-pressed="true" data-mode="day">Day</button>
+          <button class="seg-btn" aria-pressed="false" data-mode="range">Range</button>
+        </div>
+        <div id="health-day-wrap" class="health-day-wrap">
+          <input id="health-date" class="health-date-input" type="date" title="Day to chart" />
+        </div>
+        <div id="health-range-wrap" class="health-range-wrap" hidden>
+          <input id="health-from" class="health-date-input" type="date" title="Start date" />
+          <span class="health-range-sep">to</span>
+          <input id="health-to" class="health-date-input" type="date" title="End date" />
+          <label class="health-bucket-label">
+            <span>Buckets</span>
+            <input id="health-bucket" class="health-bucket-input" type="number" min="10" max="1000" step="10" title="Number of chart buckets" />
+          </label>
+        </div>
+        <div class="health-series-bar" id="health-series-bar" role="group" aria-label="Selected series"></div>
+        <span class="health-help">Select a day or a date range and the series to chart. Data is read from the local archive.</span>
+      </div>
+    </section>
+
+    <!-- Route controls: sort + area filter. Shown only when routes are in view. -->
+    <section id="route-toolbar" class="toolbar toolbar-routes" hidden>
+      <div class="wrap">
+        <label class="route-ctl">
+          <span class="route-ctl-label">Sort routes</span>
+          <select id="route-sort" class="sport-select">
+            <option value="dist_asc" selected>Distance: short -> long</option>
+            <option value="dist_desc">Distance: long -> short</option>
+            <option value="name">Name A-Z</option>
+            <option value="nearest">Nearest start</option>
+            <option value="recent">Recently added</option>
+          </select>
+        </label>
+        <div class="anchor-wrap">
+          <button id="anchor-btn" class="btn btn-ghost" title="Show routes that start near an area">
+            <span class="ico" data-icon="map-pin"></span><span id="anchor-btn-text">Routes near...</span>
+          </button>
+          <span id="anchor-chip" class="anchor-chip" hidden></span>
+          <!-- Anchor picker popover, built + toggled by main.js -->
+          <div id="anchor-pop" class="anchor-pop" hidden></div>
+        </div>
+        <div class="spacer"></div>
+        <button id="curate-watch-btn" class="btn btn-outline" title="Choose which routes stay on your watch">
+          <span class="ico" data-icon="device-watch"></span><span>Curate watch</span>
+        </button>
+        <button id="add-route-btn" class="btn btn-outline" title="Import a GPX or FIT route and add it to your watch">
+          <span class="ico" data-icon="plus"></span><span>Add route</span>
+        </button>
+        <input type="file" id="route-file" accept=".gpx,.fit" hidden />
+      </div>
+    </section>
+
+    <div id="bulkbar" class="bulkbar" hidden>
+      <div class="wrap">
+        <span id="bulk-count">0 selected</span>
+        <button id="bulk-select-visible" class="btn btn-ghost bulk-select-visible">Select all</button>
+        <div class="spacer"></div>
+        <button id="bulk-add-watch" class="btn btn-blue">Add to watch</button>
+        <button id="bulk-remove" class="btn btn-blue">Remove from watch</button>
+        <button id="bulk-voice-unarchive" class="btn btn-blue" hidden>Unarchive</button>
+        <button id="bulk-delete-connect" class="btn btn-danger">Delete from Connect</button>
+        <button id="bulk-clear" class="btn btn-ghost">Clear</button>
+      </div>
+    </div>
+
+    <div class="scroll">
+      <main id="list" class="list wrap" aria-live="polite"></main>
+    </div>
+
+    <footer class="statusline">
+      <div class="wrap">
+        <span id="status-counts"></span>
+        <span class="spacer"></span>
+        <span id="status-updated"></span>
+      </div>
+    </footer>
+
+    <!-- Confirm modal: always names exactly what will change and where, before any apply. -->
+    <div id="modal" class="modal" hidden>
+      <div class="modal-card">
+        <div id="modal-title" class="modal-title"></div>
+        <div id="modal-lead" class="modal-lead"></div>
+        <ul id="modal-list" class="modal-list"></ul>
+        <div id="modal-warn" class="modal-warn" hidden></div>
+        <div class="modal-actions">
+          <button id="modal-cancel" class="btn btn-ghost">Cancel</button>
+          <button id="modal-confirm" class="btn btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <div id="scan" class="scan" hidden>
+      <div class="scan-card">
+        <div class="scan-top">
+          <div id="scan-text" class="scan-title"></div>
+          <div id="scan-elapsed" class="scan-elapsed" hidden>0:00</div>
+        </div>
+        <div class="scan-bar" aria-hidden="true"><span></span></div>
+        <div id="scan-subtext" class="scan-subtext" hidden></div>
+      </div>
+    </div>
+  </body>
+</html>

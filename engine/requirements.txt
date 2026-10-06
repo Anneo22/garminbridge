@@ -1,0 +1,13 @@
+# GarminBridge engine dependencies.
+# Pinned to the versions this engine is verified against (2026-07-21).
+#
+# Only the three hard imports of the app's dependency closure are listed. PyYAML
+# is deliberately absent: spec.py imports it lazily inside load_yaml() as an
+# optional path, so a normal install must not carry it.
+#
+# garth is deliberately absent too. It was pinned here on the belief that the
+# engine used it for the token store and session resume; it did neither.
+
+garminconnect==0.3.6
+fit-tool==0.9.15
+fitdecode==0.11.0

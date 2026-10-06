@@ -1,0 +1,62 @@
+# compiled watcher binary (built from src/ by install-autorun.sh)
+bin/garmin-usb-watcher
+*.dSYM/
+
+# transcription virtualenv (created by install-transcription.sh)
+.venv/
+
+# local config with API keys (never commit)
+config
+
+# macOS
+.DS_Store
+
+# internal hand-off journal (kept local, not published)
+CHANGES.log
+
+# agent conventions doc (describes the internal build workflow; kept local, never publish)
+AGENTS.md
+
+# menu-bar app bundle (built by install-menubar.sh)
+GarminBridge.app/
+
+# local project handoff (carries the publishing rule + internal notes; never publish)
+HANDOFF.md
+
+# internal one-shot recon tooling + its output (never publish)
+recon-garmin-fs.sh
+recon.out
+
+# Phase 1 Connect prototype — the DEV working dir: venv, live tokens, personal caches.
+# Stays wholly ignored. The shippable code now lives in engine/ instead.
+prototype/
+
+# engine/ is the SHIPPED engine and holds CODE ONLY — it is tracked normally.
+# These deny rules are defence in depth: the modules still resolve their state
+# relative to their own directory, so running them from engine/ writes tokens and
+# personal caches beside the code. This repo already leaked a file to the public
+# repo once, so the state names are denied explicitly rather than trusted not to
+# appear. Any NEW state file the engine learns to write must be added here.
+engine/.*
+engine/__pycache__/
+engine/catalog/
+engine/probe-out/
+engine/*_sample.json
+engine/route_traces*.json
+engine/watch_manifest.json
+engine/watch_snapshot.json
+engine/wind_cache.json
+
+# scripts/ holds maintenance tooling and is tracked. Its test imports the check
+# as a module, which leaves bytecode behind.
+scripts/__pycache__/
+engine/imported_routes.json
+engine/stale_routes_seen.json
+
+# local agent session dir (worktrees, local launch config; never publish)
+.claude/
+
+# Downloaded runtime payload (interpreter + wheelhouse). Fetched by
+# scripts/fetch-runtime.sh from pinned URLs+checksums; NEVER committed —
+# this is a public repo whose largest tracked file is 248 KB.
+vendor/

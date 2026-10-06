@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# garminbridge — the GarminBridge control CLI. The underlying script is bin/garmin-voice
+# (kept for install compatibility); this is the brand-matching entry point. Same commands:
+#   garminbridge status | sync | activities | pause | resume | free
+#
+# Installing the CLI means symlinking THIS file onto someone's PATH, so $0 is the symlink
+# and its directory holds nothing else of ours. Resolve the link chain before looking for
+# garmin-voice beside us. Open-coded rather than sourced from gve-paths.sh, because
+# finding that file is the very thing this resolves.
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+exec "$(cd -P "$(dirname "$src")" && pwd)/garmin-voice" "$@"

@@ -1,0 +1,62 @@
+# Garmin Bridge bundled runtime lock, format version 1.
+#
+# This is deliberately a small line-oriented file instead of JSON/TOML: the fetcher
+# must run before the bundled Python exists, and POSIX text tools can parse it without
+# adding another bootstrap dependency. Fields are whitespace-separated;
+# URLs and wheel filenames may not contain spaces.
+#
+# These pins detect a changed or corrupted artifact when the runtime is fetched
+# again. They are reproducibility checks, not an independent audit of the bytes
+# that were downloaded and verified when this lock was created.
+
+python_version 3.14.6
+python_url https://github.com/astral-sh/python-build-standalone/releases/download/20260718/cpython-3.14.6%2B20260718-aarch64-apple-darwin-install_only.tar.gz
+python_sha256 5a234e405386bf486bab196018c01bc4577a4f0cc9fd5bc50f7a979fe4f5c59d
+engine_requirements_sha256 df6baaeb05581324ad124247de2d8369205af8a2e0d314cd3f318f5e4902df8e
+
+wheel 2c5b1ef022b0d690b6707464ee1bfd394c79f9a9ef4e765faf1168056fa21337 bitstruct-8.22.1-cp314-cp314-macosx_11_0_arm64.whl
+wheel 62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 certifi-2026.7.22-py3-none-any.whl
+wheel c4165821e131d6d4ca444347c2b694e2311bcfa3fe5a861cc72968f28867beac cffi-2.1.0-cp314-cp314-macosx_11_0_arm64.whl
+wheel 0327fcd59a935777d83410750c50600ee9571af2846f71ce40f25b13da1ef380 charset_normalizer-3.4.9-cp314-cp314-macosx_10_15_universal2.whl
+wheel a25620d9bf989c9c029a7d1642999c4c265abb0bad811deb2f77b0b5b2b12e5b curl_cffi-0.15.0-cp310-abi3-macosx_11_0_arm64.whl
+wheel 7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa et_xmlfile-2.0.0-py3-none-any.whl
+wheel 4d367e9fd146dc65288de2bfb9b63f54965485a7a3259fbaaadfefd1ba83e82e fit_tool-0.9.15-py3-none-any.whl
+wheel a1bdb9b4d1e9ebac0001fc58c22fe07a3f9967ca4e13258c6ef99cdb8d697a78 fitdecode-0.11.0-py3-none-any.whl
+wheel e05782ab90e63cb9c023407899e2d12dd18132316fd84394ebecd393809d4ffe garminconnect-0.3.6-py3-none-any.whl
+wheel 7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2 idna-3.18-py3-none-any.whl
+wheel 9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a markdown_it_py-4.2.0-py3-none-any.whl
+wheel 84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 mdurl-0.1.2-py3-none-any.whl
+wheel 5282c12b107bffeef825f4617dc029afaf41d0ea60823bbb665ef3079dc79de2 openpyxl-3.1.5-py2.py3-none-any.whl
+wheel b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992 pycparser-3.0-py3-none-any.whl
+wheel 81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176 pygments-2.20.0-py3-none-any.whl
+wheel 2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 requests-2.34.2-py3-none-any.whl
+wheel 33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb rich-15.0.0-py3-none-any.whl
+wheel 18a52f4bebdc43963defb071cd66a2a68f84607767403d425a9fcf7542aeb727 ua_generator-2.1.2-py3-none-any.whl
+wheel 9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897 urllib3-2.7.0-py3-none-any.whl
+
+# gphoto2 is copied from exact Homebrew Cellar versions at build time, then
+# relocated into vendor/gphoto2. The shipped app has no Homebrew dependency.
+formula gphoto2 2.5.32
+formula libgphoto2 2.5.34
+formula libtool 2.5.4
+formula libusb 1.0.30
+formula libexif 0.6.26
+formula jpeg-turbo 3.2.0
+formula gettext 1.0
+formula popt 1.19
+formula readline 8.3.3
+
+# Fields: gphoto2_file SHA256 FORMULA CELLAR_RELATIVE_SOURCE BUNDLE_RELATIVE_DESTINATION
+gphoto2_file bf573c1ba37ad360ffde609a1c2015a8cf30cfb604ad976dca7e046560a6bb8e gphoto2 bin/gphoto2 bin/gphoto2
+gphoto2_file d1b353f9a248699454857a75195baae7e1ad7496a3ddf1e9eabc2e96d7ec8861 libgphoto2 lib/libgphoto2/2.5.34/ptp2.so camlibs/ptp2.so
+gphoto2_file 6fd0ce5995b819a72eca29610f28003589062c65e5a0a61185c9f5f3c9cef56c libgphoto2 lib/libgphoto2/2.5.34/directory.so camlibs/directory.so
+gphoto2_file ebe1c37f32adeac33caf59e6f445c3a0e4a46566c6a7566623aedbb0ac267843 libgphoto2 lib/libgphoto2_port/0.12.2/usb1.so iolibs/usb1.so
+gphoto2_file 42e9702f3a769d7fd969e2653bc075aa46f583e22e8c27ac3480e0c9fc3dbc59 libgphoto2 lib/libgphoto2.6.dylib lib/libgphoto2.6.dylib
+gphoto2_file 485e7a2e5fcc4e1f016bfb38e81bf90ef02fb12b53b3481ff8f221504d9b2128 libgphoto2 lib/libgphoto2_port.12.dylib lib/libgphoto2_port.12.dylib
+gphoto2_file b00ae39a258bbd3ffa24466d3742fcb7d2e9d288b5a914c61fac294110b1ec18 libtool lib/libltdl.7.dylib lib/libltdl.7.dylib
+gphoto2_file d4d61d9f4e5291e64c09783cb61bd1b4c67e202b514f40989504a5852f7560b9 libusb lib/libusb-1.0.0.dylib lib/libusb-1.0.0.dylib
+gphoto2_file 7f6261f4793b67b6de89f0c99f3d78c7ea4706db2b3147f0abc7b85bc91cb346 libexif lib/libexif.12.dylib lib/libexif.12.dylib
+gphoto2_file e6585d0aee1969a63f288f97bbe3ef100ac787bc25ebcc4e6487b82b96cdbcae jpeg-turbo lib/libjpeg.8.3.2.dylib lib/libjpeg.8.3.2.dylib
+gphoto2_file 0c6d618e75fea85cc3d631e164a71766fba9341d19ce1f723300c52e63037c51 gettext lib/libintl.8.dylib lib/libintl.8.dylib
+gphoto2_file 3f1a2d786e8648bcc0f6809d8e6c4847fba728a98cd10c5f5a76b7e4e789c277 popt lib/libpopt.0.dylib lib/libpopt.0.dylib
+gphoto2_file 7d74566dcbd3f64a5ec6266c8285e48f0214a9d2f36ad5f158b4282a3f10b9a9 readline lib/libreadline.8.3.dylib lib/libreadline.8.3.dylib
